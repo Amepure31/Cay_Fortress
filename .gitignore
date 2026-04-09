@@ -1,0 +1,22 @@
+# UE5 自动生成的缓存（必须忽略）
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+Script/
+Plugins/
+
+# Visual Studio 生成文件
+.vs/
+*.sln
+*.suo
+*.vcxproj
+*.vcxproj.user
+*.opendb
+*.pdb
+
+# 日志与临时文件
+*.log
+.DS_Store
+Thumbs.db
