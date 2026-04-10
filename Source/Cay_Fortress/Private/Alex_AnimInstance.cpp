@@ -4,6 +4,8 @@
 #include "Alex_AnimInstance.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Alex_PlayerCharacter.h"
 #include "Logging/LogMacros.h"
 
 // 动画更新事件（每帧调用）
@@ -11,8 +13,6 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 {
 	Super::NativeUpdateAnimation(DeltaTime);
 
-	// 打印地速和方向
-	UE_LOG(LogTemp, Warning, TEXT("GroundSpeed: %f, Direction: %f"), GroundSpeed, Direction);
 
 	// 获取角色
 	ACharacter* Character = GetOwningCharacter();
@@ -68,6 +68,23 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 
 			// 更新 IsFalling：参考蓝图中的 IsFalling 函数
 			IsFalling = Movement->IsFalling();
+
+			// 更新跑步状态
+			IsRunning = CheckIsRunning();
+
+			// 更新移动速度和跑步速度
+			if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(Character))
+			{
+				MoveSpeed = PlayerCharacter->GetMoveSpeed();
+				RunSpeed = PlayerCharacter->GetRunSpeed();
+				CurrentMoveSpeed = PlayerCharacter->GetCurrentMoveSpeed();
+			}
+			else
+			{
+				MoveSpeed = 0.0f;
+				RunSpeed = 0.0f;
+				CurrentMoveSpeed = 0.0f;
+			}
 		}
 		else
 		{
@@ -77,6 +94,10 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 			Direction = 0.0f;
 			ShouldMove = false;
 			IsFalling = false;
+			IsRunning = false;
+			MoveSpeed = 0.0f;
+			RunSpeed = 0.0f;
+			CurrentMoveSpeed = 0.0f;
 		}
 	}
 	else
@@ -87,6 +108,10 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 		Direction = 0.0f;
 		ShouldMove = false;
 		IsFalling = false;
+		IsRunning = false;
+		MoveSpeed = 0.0f;
+		RunSpeed = 0.0f;
+		CurrentMoveSpeed = 0.0f;
 	}
 }
 
@@ -112,6 +137,42 @@ UCharacterMovementComponent* UAlex_AnimInstance::GetCharacterMovement() const
 		return Character->GetCharacterMovement();
 	}
 	return nullptr;
+}
+
+// 获取玩家控制器
+APlayerController* UAlex_AnimInstance::GetPlayerController() const
+{
+	// 获取角色
+	ACharacter* Character = GetOwningCharacter();
+	if (Character)
+	{
+		return Character->GetController<APlayerController>();
+	}
+	return nullptr;
+}
+
+// 检查角色是否正在跑步
+bool UAlex_AnimInstance::CheckIsRunning() const
+{
+	// 获取角色
+	ACharacter* Character = GetOwningCharacter();
+	if (Character)
+	{
+		UCharacterMovementComponent* CharMovement = Character->GetCharacterMovement();
+		if (CharMovement)
+		{
+			// 检查是否在移动
+			if (GroundSpeed > 0.1f)
+			{
+				// 获取角色速度阈值
+				float CurrentMaxSpeed = CharMovement->MaxWalkSpeed;
+				
+				// 如果当前速度超过最大行走速度，认为是跑步
+				return GroundSpeed > CurrentMaxSpeed;
+			}
+		}
+	}
+	return false;
 }
 
 // Getter 函数
@@ -140,3 +201,22 @@ bool UAlex_AnimInstance::GetIsFalling_Bp() const
 	return IsFalling;
 }
 
+bool UAlex_AnimInstance::GetIsRunning_Bp() const
+{
+	return IsRunning;
+}
+
+float UAlex_AnimInstance::GetMoveSpeed_Bp() const
+{
+	return MoveSpeed;
+}
+
+float UAlex_AnimInstance::GetRunSpeed_Bp() const
+{
+	return RunSpeed;
+}
+
+float UAlex_AnimInstance::GetCurrentMoveSpeed_Bp() const
+{
+	return CurrentMoveSpeed;
+}

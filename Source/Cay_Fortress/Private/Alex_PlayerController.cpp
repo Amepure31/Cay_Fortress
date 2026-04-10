@@ -2,6 +2,8 @@
 
 #include "Alex_PlayerController.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Alex_PlayerCharacter.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 
@@ -40,6 +42,12 @@ void AAlex_PlayerController::SetupInputComponent()
 		
 		// Bind jump action
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AAlex_PlayerController::Jump);
+		
+		// Bind run action（按下时触发）
+		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Run);
+		
+		// Bind run action（松开时触发）
+		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::StopRun);
 	}
 }
 
@@ -81,5 +89,27 @@ void AAlex_PlayerController::Jump()
 	if (GetCharacter())
 	{
 		GetCharacter()->Jump();
+	}
+}
+
+void AAlex_PlayerController::Run(const FInputActionValue& Value)
+{
+	if (Value.Get<bool>() && GetCharacter())
+	{
+		if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
+		{
+			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetRunSpeed());
+		}
+	}
+}
+
+void AAlex_PlayerController::StopRun()
+{
+	if (GetCharacter())
+	{
+		if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
+		{
+			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetMoveSpeed());
+		}
 	}
 }

@@ -8,10 +8,12 @@
 
 class AActor;
 class ACharacter;
+class APlayerController;
 class UCharacterMovementComponent;
 
 /**
- * 
+ * 动画实例类
+ * 处理角色动画状态和参数
  */
 UCLASS()
 class CAY_FORTRESS_API UAlex_AnimInstance : public UAnimInstance
@@ -28,6 +30,10 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Character")
 	UCharacterMovementComponent* GetCharacterMovement() const;
 
+	// 获取玩家控制器
+	UFUNCTION(BlueprintCallable, Category = "Character")
+	APlayerController* GetPlayerController() const;
+
 	// Getter 函数
 	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
 	float GetGroundSpeed_Bp() const;
@@ -43,6 +49,15 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
 	bool GetIsFalling_Bp() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
+	bool GetIsRunning_Bp() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
+	float GetMoveSpeed_Bp() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
+	float GetRunSpeed_Bp() const;
 
 	// 动画更新事件（每帧调用）
 	virtual void NativeUpdateAnimation(float DeltaTime) override;
@@ -62,4 +77,23 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Character", meta = (Alias = "IsFalling_Bp", BlueprintGetter = "GetIsFalling_Bp"))
 	bool IsFalling;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Character", meta = (Alias = "IsRunning_Bp", BlueprintGetter = "GetIsRunning_Bp"))
+	bool IsRunning;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Character", meta = (Alias = "MoveSpeed_Bp", BlueprintGetter = "GetMoveSpeed_Bp"))
+	float MoveSpeed;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Character", meta = (Alias = "RunSpeed_Bp", BlueprintGetter = "GetRunSpeed_Bp"))
+	float RunSpeed;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Character", meta = (Alias = "CurrentMoveSpeed_Bp", BlueprintGetter = "GetCurrentMoveSpeed_Bp"))
+	float CurrentMoveSpeed;
+
+private:
+	// 检查角色是否正在跑步
+	bool CheckIsRunning() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
+	float GetCurrentMoveSpeed_Bp() const;
 };
