@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -8,6 +6,7 @@
 
 class USpringArmComponent;
 class UCameraComponent;
+class UInventoryComponent;
 
 /**
  * 玩家角色类
@@ -22,6 +21,7 @@ public:
 	AAlex_PlayerCharacter();
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// 弹簧臂组件
@@ -31,6 +31,10 @@ protected:
 	// 摄像机组件
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
+
+	// 背包组件
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	UInventoryComponent* Inventory;
 
 public:
 	/** 生命值 */
@@ -74,6 +78,9 @@ protected:
 	float CurrentRunSpeed;
 
 public:
+	UFUNCTION(BlueprintCallable, Category = "Character|Inventory")
+	UInventoryComponent* GetInventory() const { return Inventory; }
+
 	/**
 	 * 获取当前生命值
 	 */
@@ -159,7 +166,7 @@ public:
 	void SetMoveSpeed(float InMoveSpeed);
 
 	/**
-	 * 设置目标移动速度（用于平滑过渡）
+	 * 设置目标移动速度
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Character|Movement")
 	void SetTargetMoveSpeed(float InTargetMoveSpeed);
@@ -171,7 +178,7 @@ public:
 	float GetTargetMoveSpeed() const;
 
 	/**
-	 * 获取当前实际移动速度（平滑过渡后的速度）
+	 * 获取当前实际移动速度
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Character|Movement")
 	float GetCurrentMoveSpeed() const;

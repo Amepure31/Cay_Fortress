@@ -11,21 +11,21 @@
  * 用于表示不规则形状的物品占用的格子
  * 使用二维布尔数组表示物品占用情况
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct CAY_FORTRESS_API FFItemShapeMask
 {
 	GENERATED_BODY()
 
 	/** 物品占用的格子矩阵（true表示占用，false表示空闲） */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadWrite, Category = "Shape")
 	TArray<uint8> ShapeMaskData;
 
 	/** 物品占用宽度（格子数） */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadWrite, Category = "Shape")
 	int32 Width;
 
 	/** 物品占用高度（格子数） */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadWrite, Category = "Shape")
 	int32 Height;
 
 	FFItemShapeMask()

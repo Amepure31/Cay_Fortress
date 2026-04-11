@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,6 +5,9 @@
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Alex_PlayerController.generated.h"
+
+class UInventoryComponent;
+class UUserWidget;
 
 UCLASS()
 class CAY_FORTRESS_API AAlex_PlayerController : public APlayerController
@@ -26,6 +27,11 @@ private:
 	void Jump();
 	void Run(const FInputActionValue& Value);
 	void StopRun();
+	void ToggleInventory();
+
+protected:
+	UFUNCTION()
+	void OnInventoryToggled(bool bIsOpen);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputMappingContext* DefaultMappingContext;
@@ -41,4 +47,18 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* RunAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* InventoryAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> InventoryWidgetClass;
+
+	UPROPERTY()
+	UUserWidget* InventoryWidget;
+
+	UPROPERTY()
+	UInventoryComponent* InventoryComponent;
+
+	bool bIsToggling;
 };

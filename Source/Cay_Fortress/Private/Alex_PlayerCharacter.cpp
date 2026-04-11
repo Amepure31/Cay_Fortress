@@ -5,9 +5,13 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/DamageType.h"
+#include "Inventory/InventoryComponent.h"
 
 AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 {
+	// 创建背包组件
+	Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
+
 	// 创建弹簧臂组件
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -54,6 +58,11 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 		// 设置最大跑步速度
 		GetCharacterMovement()->MaxFlySpeed = RunSpeed;
 	}
+}
+
+void AAlex_PlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
 }
 
 float AAlex_PlayerCharacter::GetHealth() const
