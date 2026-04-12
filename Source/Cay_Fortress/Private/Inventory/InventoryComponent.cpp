@@ -69,19 +69,35 @@ void UInventoryComponent::Clear()
 
 void UInventoryComponent::OpenInventory()
 {
+	UE_LOG(LogTemp, Warning, TEXT("=== UInventoryComponent::OpenInventory called ==="));
+	UE_LOG(LogTemp, Warning, TEXT("Before: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
 	if (!bIsInventoryOpen)
 	{
 		bIsInventoryOpen = true;
+		UE_LOG(LogTemp, Warning, TEXT("Inventory opened, broadcasting delegate"));
 		OnInventoryToggled.Broadcast(bIsInventoryOpen);
+		UE_LOG(LogTemp, Warning, TEXT("After: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Inventory already open, ignoring"));
 	}
 }
 
 void UInventoryComponent::CloseInventory()
 {
+	UE_LOG(LogTemp, Warning, TEXT("=== UInventoryComponent::CloseInventory called ==="));
+	UE_LOG(LogTemp, Warning, TEXT("Before: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
 	if (bIsInventoryOpen)
 	{
 		bIsInventoryOpen = false;
+		UE_LOG(LogTemp, Warning, TEXT("Inventory closed, broadcasting delegate"));
 		OnInventoryToggled.Broadcast(bIsInventoryOpen);
+		UE_LOG(LogTemp, Warning, TEXT("After: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Inventory already closed, ignoring"));
 	}
 }
 

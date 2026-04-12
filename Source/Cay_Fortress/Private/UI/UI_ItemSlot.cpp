@@ -2,8 +2,14 @@
 #include "Components/Image.h"
 #include "Components/Overlay.h"
 #include "Inventory/InventoryItemRarity.h"
+#include "UI/UI_ItemWidget.h"
+#include "UI/UI_Inventory.h"
+#include "Inventory/FInventoryItemInstance.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWidget.h"
+#include "Input/Reply.h"
+#include "SlateBasics.h"
+#include "Blueprint/UserWidget.h"
 
 void UUI_ItemSlot::NativeConstruct()
 {
@@ -31,6 +37,26 @@ FReply UUI_ItemSlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, const 
 {
 	Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	OnSlotClicked.Broadcast(this);
+	
+	if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) && BoundItem && BoundItem->ItemData)
+	{
+		if (UUI_Inventory* InventoryWidget = Cast<UUI_Inventory>(GetRootWidget()))
+		{
+			if (UUI_ItemWidget* ItemWidget = CreateWidget<UUI_ItemWidget>(InventoryWidget->GetWorld(), UUI_ItemWidget::StaticClass()))
+			{
+				ItemWidget->SetItemInstance(BoundItem);
+				InventoryWidget->SetDraggedItemWidget(ItemWidget);
+				ItemWidget->AddToViewport();
+				TSharedPtr<SWidget> WidgetPtr = ItemWidget->GetCachedWidget();
+				if (WidgetPtr.IsValid())
+				{
+					TSharedRef<SWidget> WidgetRef = WidgetPtr.ToSharedRef();
+					return FReply::Handled().DetectDrag(WidgetRef, EKeys::LeftMouseButton);
+				}
+			}
+		}
+	}
+	
 	return FReply::Handled();
 }
 
@@ -79,6 +105,55 @@ void UUI_ItemSlot::SetCanPlace(bool bCanPlace)
 	}
 }
 
+void UUI_ItemSlot::UpdateCanPlaceFromItem(UUI_ItemWidget* ItemWidget)
+{
+	if (!ItemWidget)
+	{
+		SetCanPlace(false);
+		return;
+	}
+
+	UInventoryItemInstance* DraggableItem = ItemWidget->GetItemInstance();
+	if (!DraggableItem)
+	{
+		SetCanPlace(false);
+		return;
+	}
+
+	if (!BoundItem)
+	{
+		SetCanPlace(true);
+		return;
+	}
+
+	int32 SlotX = DraggableItem->SlotX;
+	int32 SlotY = DraggableItem->SlotY;
+
+	int32 DraggableWidth = DraggableItem->Width;
+	int32 DraggableHeight = DraggableItem->Height;
+
+	int32 ItemGridX = GridX - SlotX;
+	int32 ItemGridY = GridY - SlotY;
+
+	bool bCanPlace = true;
+
+	if (ItemGridX < 0 || ItemGridX >= DraggableWidth ||
+		ItemGridY < 0 || ItemGridY >= DraggableHeight)
+	{
+		bCanPlace = false;
+	}
+
+	if (bCanPlace && DraggableItem->ShapeMask.Width > 0 && DraggableItem->ShapeMask.Height > 0)
+	{
+		if (!DraggableItem->ShapeMask.IsOccupied(ItemGridX, ItemGridY))
+		{
+			bCanPlace = false;
+		}
+	}
+
+	SetCanPlace(bCanPlace);
+}
+
 void UUI_ItemSlot::SetOccupied(bool bOccupied, EInventoryItemRarity Rarity)
 {
 	bIsOccupied = bOccupied;
@@ -93,6 +168,15 @@ void UUI_ItemSlot::SetOccupied(bool bOccupied, EInventoryItemRarity Rarity)
 		{
 			Background->SetColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f));
 		}
+	}
+
+	if (CanPlaceOverlay)
+	{
+		CanPlaceOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+	if (CannotPlaceOverlay)
+	{
+		CannotPlaceOverlay->SetVisibility(ESlateVisibility::Hidden);
 	}
 }
 

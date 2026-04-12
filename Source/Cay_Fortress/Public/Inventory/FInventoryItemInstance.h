@@ -19,10 +19,6 @@ class CAY_FORTRESS_API UInventoryItemInstance : public UObject
 	GENERATED_BODY()
 
 public:
-	/** 物品数据模板类 */
-	UPROPERTY()
-	TSubclassOf<UInventoryItemDataAsset> ItemClass;
-
 	/** 物品数据指针 */
 	UPROPERTY()
 	UInventoryItemDataAsset* ItemData;
@@ -68,8 +64,7 @@ public:
 	bool bIsBound;
 
 	UInventoryItemInstance()
-		: ItemClass(nullptr)
-		, ItemData(nullptr)
+		: ItemData(nullptr)
 		, StackSize(1)
 		, Durability(100)
 		, MaxDurability(100)
@@ -92,7 +87,6 @@ public:
 		ItemData = InItemData;
 		if (ItemData)
 		{
-			ItemClass = InItemData->GetClass();
 			Width = InItemData->ItemData.Width;
 			Height = InItemData->ItemData.Height;
 			ShapeMask.Init(Width, Height, InItemData->ItemData.ShapeMaskData);

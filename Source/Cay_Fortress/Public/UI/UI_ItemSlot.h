@@ -52,6 +52,9 @@ public:
 	bool CanPlace() const { return bCanPlaceItem; }
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void UpdateCanPlaceFromItem(UUI_ItemWidget* ItemWidget);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SetOccupied(bool bOccupied, EInventoryItemRarity Rarity = EInventoryItemRarity::Normal);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -65,6 +68,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	UInventoryItemInstance* GetBoundItem() const { return BoundItem; }
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetGridX() const { return GridX; }
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetGridY() const { return GridY; }
 
 protected:
 	virtual void NativeConstruct() override;

@@ -3,11 +3,14 @@
 #include "CoreMinimal.h"
 #include "UI/UI_Base_Class.h"
 #include "Inventory/InventoryComponent.h"
+#include "UI/UI_ItemWidget.h"
+#include "SlateBasics.h"
 #include "UI_Inventory.generated.h"
 
 class UUniformGridPanel;
 class UUI_ItemSlot;
 class UUI_ItemTooltip;
+class UUI_ItemWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnItemSlotClicked, UUI_ItemSlot*, ItemSlot);
 
@@ -53,9 +56,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void CloseInventory();
 
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void UpdateSlotCanPlacePreviews(UUI_ItemWidget* ItemWidget);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SetDraggedItemWidget(UUI_ItemWidget* InWidget);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	UUI_ItemWidget* GetDraggedItemWidget() const;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
 	UPROPERTY()
@@ -67,7 +81,12 @@ private:
 	UPROPERTY()
 	UUI_ItemTooltip* ActiveTooltip;
 
+	UPROPERTY()
+	UUI_ItemWidget* DraggedItemWidget;
+
+protected:
 	void CreateGrid();
+	void SetSlotSize();
 	void OnItemSlotClickedInternal(UUI_ItemSlot* Slot);
 	void ShowTooltip(UUI_ItemSlot* Slot);
 	void HideTooltip();

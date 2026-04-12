@@ -13,6 +13,8 @@ AAlex_PlayerController::AAlex_PlayerController()
 	InventoryWidget = nullptr;
 	InventoryComponent = nullptr;
 	bIsToggling = false;
+	LastToggleTime = 0.0f;
+	bToggleCooldown = false;
 }
 
 void AAlex_PlayerController::BeginPlay()
@@ -71,7 +73,7 @@ void AAlex_PlayerController::SetupInputComponent()
 		
 		if (InventoryAction)
 		{
-			EnhancedInputComponent->BindAction(InventoryAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::ToggleInventory);
+			EnhancedInputComponent->BindAction(InventoryAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ToggleInventory);
 			UE_LOG(LogTemp, Warning, TEXT("InventoryAction bound successfully"));
 		}
 	}
@@ -134,7 +136,26 @@ void AAlex_PlayerController::StopRun()
 
 void AAlex_PlayerController::ToggleInventory()
 {
-	UE_LOG(LogTemp, Warning, TEXT("ToggleInventory called"));
+	UE_LOG(LogTemp, Warning, TEXT("=== ToggleInventory called ==="));
+	UE_LOG(LogTemp, Warning, TEXT("Current state: bShowMouseCursor=%s, bIsToggling=%s, bToggleCooldown=%s"), 
+		bShowMouseCursor ? TEXT("true") : TEXT("false"),
+		bIsToggling ? TEXT("true") : TEXT("false"),
+		bToggleCooldown ? TEXT("true") : TEXT("false"));
+	
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+	
+	if (bToggleCooldown)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Cooldown check: CurrentTime=%.2f, LastToggleTime=%.2f, Diff=%.2f"), 
+			CurrentTime, LastToggleTime, CurrentTime - LastToggleTime);
+		if (CurrentTime - LastToggleTime < 0.5f)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("In cooldown period, ignoring input"));
+			return;
+		}
+		bToggleCooldown = false;
+		UE_LOG(LogTemp, Warning, TEXT("Cooldown expired, resetting bToggleCooldown"));
+	}
 	
 	if (bIsToggling)
 	{
@@ -150,8 +171,10 @@ void AAlex_PlayerController::ToggleInventory()
 	
 	if (bShowMouseCursor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Already in UI mode, closing inventory directly"));
+		UE_LOG(LogTemp, Warning, TEXT("Inventory is open, closing it"));
 		bIsToggling = true;
+		LastToggleTime = CurrentTime;
+		UE_LOG(LogTemp, Warning, TEXT("Calling CloseInventory()"));
 		InventoryComponent->CloseInventory();
 		return;
 	}
@@ -160,7 +183,7 @@ void AAlex_PlayerController::ToggleInventory()
 	{
 		if (InventoryWidgetClass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Creating InventoryWidget first"));
+			UE_LOG(LogTemp, Warning, TEXT("Creating InventoryWidget"));
 			InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
 			if (InventoryWidget)
 			{
@@ -186,17 +209,26 @@ void AAlex_PlayerController::ToggleInventory()
 		}
 	}
 	
+	UE_LOG(LogTemp, Warning, TEXT("Opening inventory"));
 	bIsToggling = true;
-	UE_LOG(LogTemp, Warning, TEXT("Calling InventoryComponent->OpenInventory()"));
+	LastToggleTime = CurrentTime;
+	UE_LOG(LogTemp, Warning, TEXT("Calling OpenInventory()"));
 	InventoryComponent->OpenInventory();
 }
 
 void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 {
-	UE_LOG(LogTemp, Warning, TEXT("OnInventoryToggled called, bIsOpen: %s"), bIsOpen ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("=== OnInventoryToggled called ==="));
+	UE_LOG(LogTemp, Warning, TEXT("bIsOpen: %s"), bIsOpen ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("Before processing: bIsToggling=%s, bToggleCooldown=%s, bShowMouseCursor=%s"), 
+		bIsToggling ? TEXT("true") : TEXT("false"),
+		bToggleCooldown ? TEXT("true") : TEXT("false"),
+		bShowMouseCursor ? TEXT("true") : TEXT("false"));
 
 	if (bIsOpen)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Processing OPEN state"));
+
 		if (InventoryWidget)
 		{
 			if (UUI_Inventory* InventoryUI = Cast<UUI_Inventory>(InventoryWidget))
@@ -206,7 +238,7 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 			}
 		}
 
-		FInputModeUIOnly InputMode;
+		FInputModeGameAndUI InputMode;
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
 		
@@ -217,9 +249,19 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 				GetCharacter()->GetCharacterMovement()->Velocity = FVector::ZeroVector;
 			}
 		}
+		
+		bToggleCooldown = true;
+		bIsToggling = false;
+		
+		UE_LOG(LogTemp, Warning, TEXT("After OPEN: bIsToggling=%s, bToggleCooldown=%s, bShowMouseCursor=%s"), 
+			bIsToggling ? TEXT("true") : TEXT("false"),
+			bToggleCooldown ? TEXT("true") : TEXT("false"),
+			bShowMouseCursor ? TEXT("true") : TEXT("false"));
 	}
 	else
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Processing CLOSE state"));
+
 		if (InventoryWidget)
 		{
 			InventoryWidget->RemoveFromParent();
@@ -230,7 +272,17 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 		FInputModeGameOnly InputMode;
 		SetInputMode(InputMode);
 		bShowMouseCursor = false;
+		
+		bToggleCooldown = true;
+		bIsToggling = false;
+		
+		UE_LOG(LogTemp, Warning, TEXT("After CLOSE: bIsToggling=%s, bToggleCooldown=%s, bShowMouseCursor=%s"), 
+			bIsToggling ? TEXT("true") : TEXT("false"),
+			bToggleCooldown ? TEXT("true") : TEXT("false"),
+			bShowMouseCursor ? TEXT("true") : TEXT("false"));
+		return;
 	}
 	
 	bIsToggling = false;
+	UE_LOG(LogTemp, Warning, TEXT("=== OnInventoryToggled finished ==="));
 }

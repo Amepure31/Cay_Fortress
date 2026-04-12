@@ -61,4 +61,7 @@ protected:
 	UInventoryComponent* InventoryComponent;
 
 	bool bIsToggling;
+	
+	float LastToggleTime;
+	bool bToggleCooldown;
 };
