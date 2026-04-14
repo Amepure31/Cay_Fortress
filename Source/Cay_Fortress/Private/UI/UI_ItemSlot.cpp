@@ -1,23 +1,26 @@
 #include "UI/UI_ItemSlot.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/SizeBox.h"
 #include "Inventory/InventoryItemRarity.h"
 #include "UI/UI_ItemWidget.h"
 #include "UI/UI_Inventory.h"
 #include "Inventory/FInventoryItemInstance.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Widgets/SWidget.h"
 #include "Input/Reply.h"
 #include "SlateBasics.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/DragDropOperation.h"
 
 void UUI_ItemSlot::NativeConstruct()
 {
 	Super::NativeConstruct();
-	GridX = -1;
-	GridY = -1;
 	bCanPlaceItem = false;
 	bIsOccupied = false;
+	ItemWidgetInstance = nullptr;
+	if (!ItemWidgetClass)
+	{
+		ItemWidgetClass = UUI_ItemWidget::StaticClass();
+	}
 
 	if (HoverOverlay)
 	{
@@ -33,49 +36,229 @@ void UUI_ItemSlot::NativeConstruct()
 	}
 }
 
+void UUI_ItemSlot::NativeDestruct()
+{
+	if (ItemWidgetInstance)
+	{
+		ItemWidgetInstance->RemoveFromParent();
+		ItemWidgetInstance = nullptr;
+	}
+
+	Super::NativeDestruct();
+}
+
 FReply UUI_ItemSlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	OnSlotClicked.Broadcast(this);
-	
-	if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) && BoundItem && BoundItem->ItemData)
+
+	if (BoundItem && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
-		if (UUI_Inventory* InventoryWidget = Cast<UUI_Inventory>(GetRootWidget()))
+		const int32 CellX = GridX - BoundItem->SlotX;
+		const int32 CellY = GridY - BoundItem->SlotY;
+		const bool bInsideItemRect =
+			CellX >= 0 && CellX < FMath::Max(1, BoundItem->Width) &&
+			CellY >= 0 && CellY < FMath::Max(1, BoundItem->Height);
+		const bool bMaskAllows =
+			(BoundItem->ShapeMask.Width <= 0 || BoundItem->ShapeMask.Height <= 0) ||
+			BoundItem->ShapeMask.IsOccupied(CellX, CellY);
+
+		if (!bInsideItemRect || !bMaskAllows)
 		{
-			if (UUI_ItemWidget* ItemWidget = CreateWidget<UUI_ItemWidget>(InventoryWidget->GetWorld(), UUI_ItemWidget::StaticClass()))
-			{
-				ItemWidget->SetItemInstance(BoundItem);
-				InventoryWidget->SetDraggedItemWidget(ItemWidget);
-				ItemWidget->AddToViewport();
-				TSharedPtr<SWidget> WidgetPtr = ItemWidget->GetCachedWidget();
-				if (WidgetPtr.IsValid())
-				{
-					TSharedRef<SWidget> WidgetRef = WidgetPtr.ToSharedRef();
-					return FReply::Handled().DetectDrag(WidgetRef, EKeys::LeftMouseButton);
-				}
-			}
+			return FReply::Unhandled();
 		}
+
+		if (TSharedPtr<SWidget> WidgetPtr = GetCachedWidget())
+		{
+			return FReply::Handled().DetectDrag(WidgetPtr.ToSharedRef(), EKeys::LeftMouseButton);
+		}
+		return FReply::Handled();
 	}
-	
+
 	return FReply::Handled();
+}
+
+void UUI_ItemSlot::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
+
+	if (!BoundItem || !BoundItem->ItemData)
+	{
+		return;
+	}
+
+	UUI_ItemWidget* SourceItemWidget = ItemWidgetInstance;
+	if (!SourceItemWidget)
+	{
+		if (!ItemWidgetClass)
+		{
+			return;
+		}
+		SourceItemWidget = CreateWidget<UUI_ItemWidget>(GetWorld(), ItemWidgetClass);
+		if (!SourceItemWidget)
+		{
+			return;
+		}
+		SourceItemWidget->SetItemInstance(BoundItem);
+		SourceItemWidget->SetOwningInventory(OwningInventory);
+	}
+
+	const int32 ItemWidth = FMath::Max(1, BoundItem->Width);
+	const int32 ItemHeight = FMath::Max(1, BoundItem->Height);
+	int32 GrabCellX = GridX - BoundItem->SlotX;
+	int32 GrabCellY = GridY - BoundItem->SlotY;
+
+	if (GrabCellX < 0 || GrabCellX >= ItemWidth || GrabCellY < 0 || GrabCellY >= ItemHeight)
+	{
+		OutOperation = nullptr;
+		return;
+	}
+	if (!SourceItemWidget->IsMaskCellInteractable(GrabCellX, GrabCellY))
+	{
+		OutOperation = nullptr;
+		return;
+	}
+
+	SourceItemWidget->SetDragGrabCell(GrabCellX, GrabCellY);
+
+	UDragDropOperation* DragOperation = NewObject<UDragDropOperation>(this);
+	if (!DragOperation)
+	{
+		return;
+	}
+
+	UUI_ItemWidget* DragVisual = CreateWidget<UUI_ItemWidget>(GetWorld(), SourceItemWidget->GetClass());
+	if (DragVisual)
+	{
+		DragVisual->SetItemInstance(BoundItem);
+		DragVisual->SetOwningInventory(OwningInventory);
+		DragVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	DragOperation->Payload = SourceItemWidget;
+	DragOperation->DefaultDragVisual = DragVisual;
+	DragOperation->Pivot = EDragPivot::MouseDown;
+	OutOperation = DragOperation;
+	SourceItemWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (OwningInventory)
+	{
+		OwningInventory->SetDraggedItemWidget(SourceItemWidget);
+	}
+}
+
+bool UUI_ItemSlot::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
+
+	UUI_ItemWidget* SourceItemWidget = InOperation ? Cast<UUI_ItemWidget>(InOperation->Payload) : nullptr;
+	UInventoryItemInstance* ItemInstance = SourceItemWidget ? SourceItemWidget->GetItemInstance() : nullptr;
+	if (!ItemInstance)
+	{
+		return false;
+	}
+
+	if (OwningInventory)
+	{
+		UUI_ItemSlot* HoveredSlot = OwningInventory->FindSlotAtScreenPosition(InDragDropEvent.GetScreenSpacePosition());
+		if (!HoveredSlot)
+		{
+			OwningInventory->ClearPlacementPreview();
+			return true;
+		}
+
+		const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
+		const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
+		OwningInventory->UpdatePlacementPreview(ItemInstance, TargetOriginX, TargetOriginY);
+		return true;
+	}
+
+	return false;
+}
+
+void UUI_ItemSlot::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
+
+	if (OwningInventory)
+	{
+		OwningInventory->ClearPlacementPreview();
+	}
+}
+
+void UUI_ItemSlot::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDragCancelled(InDragDropEvent, InOperation);
+
+	if (OwningInventory)
+	{
+		OwningInventory->ClearPlacementPreview();
+		OwningInventory->UpdateInventory();
+		OwningInventory->SetDraggedItemWidget(nullptr);
+	}
+	if (ItemWidgetInstance)
+	{
+		ItemWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+bool UUI_ItemSlot::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+
+	UUI_ItemWidget* SourceItemWidget = InOperation ? Cast<UUI_ItemWidget>(InOperation->Payload) : nullptr;
+	UInventoryItemInstance* ItemInstance = SourceItemWidget ? SourceItemWidget->GetItemInstance() : nullptr;
+	if (!ItemInstance)
+	{
+		return false;
+	}
+
+	if (OwningInventory)
+	{
+		UUI_ItemSlot* HoveredSlot = OwningInventory->FindSlotAtScreenPosition(InDragDropEvent.GetScreenSpacePosition());
+		if (!HoveredSlot)
+		{
+			OwningInventory->ClearPlacementPreview();
+			OwningInventory->SetDraggedItemWidget(nullptr);
+			return false;
+		}
+
+		const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
+		const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
+		const bool bPlaced = OwningInventory->TryPlaceDraggedItem(ItemInstance, TargetOriginX, TargetOriginY);
+		OwningInventory->SetDraggedItemWidget(nullptr);
+		return bPlaced;
+	}
+
+	return false;
 }
 
 void UUI_ItemSlot::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
-	if (HoverOverlay)
+
+	if (BoundItem && OwningInventory)
 	{
-		HoverOverlay->SetVisibility(ESlateVisibility::Visible);
+		OwningInventory->SetItemHoverPreview(BoundItem);
 	}
+	else
+	{
+		SetHoverActive(true);
+	}
+
 	OnSlotHovered.Broadcast(this);
 }
 
 void UUI_ItemSlot::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
-	if (HoverOverlay)
+
+	if (BoundItem && OwningInventory)
 	{
-		HoverOverlay->SetVisibility(ESlateVisibility::Hidden);
+		OwningInventory->ClearItemHoverPreview(BoundItem);
+	}
+	else
+	{
+		SetHoverActive(false);
 	}
 }
 
@@ -102,6 +285,27 @@ void UUI_ItemSlot::SetCanPlace(bool bCanPlace)
 	if (CannotPlaceOverlay)
 	{
 		CannotPlaceOverlay->SetVisibility(!bCanPlace ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+	}
+}
+
+void UUI_ItemSlot::ClearCanPlacePreview()
+{
+	bCanPlaceItem = false;
+	if (CanPlaceOverlay)
+	{
+		CanPlaceOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+	if (CannotPlaceOverlay)
+	{
+		CannotPlaceOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UUI_ItemSlot::SetHoverActive(bool bActive)
+{
+	if (HoverOverlay)
+	{
+		HoverOverlay->SetVisibility(bActive ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
 }
 
@@ -183,16 +387,82 @@ void UUI_ItemSlot::SetOccupied(bool bOccupied, EInventoryItemRarity Rarity)
 void UUI_ItemSlot::BindItem(UInventoryItemInstance* InItemInstance)
 {
 	BoundItem = InItemInstance;
+
+	if (ItemContainer)
+	{
+		ItemContainer->ClearChildren();
+		ItemContainer->SetVisibility(ESlateVisibility::Visible);
+		ItemContainer->SetIsEnabled(true);
+	}
+	ItemWidgetInstance = nullptr;
+
 	if (InItemInstance && InItemInstance->ItemData)
 	{
 		SetOccupied(true, InItemInstance->ItemData->ItemData.Rarity);
+
+		if (ItemContainer)
+		{
+			if (!ItemWidgetClass)
+			{
+				return;
+			}
+
+			UUI_ItemWidget* NewItemWidget = CreateWidget<UUI_ItemWidget>(GetWorld(), ItemWidgetClass);
+			if (NewItemWidget)
+			{
+				NewItemWidget->SetVisibility(ESlateVisibility::Visible);
+				NewItemWidget->SetIsEnabled(true);
+				NewItemWidget->SetItemInstance(InItemInstance);
+				NewItemWidget->SetOwningInventory(OwningInventory);
+				const FVector2D SlotSize = GetCachedGeometry().GetLocalSize();
+				const float BaseWidth = SlotSize.X > 1.0f ? SlotSize.X : 64.0f;
+				const float BaseHeight = SlotSize.Y > 1.0f ? SlotSize.Y : 64.0f;
+				const float WidgetWidth = BaseWidth * FMath::Max(1, InItemInstance->Width);
+				const float WidgetHeight = BaseHeight * FMath::Max(1, InItemInstance->Height);
+
+				USizeBox* ItemSizeBox = NewObject<USizeBox>(this);
+				if (ItemSizeBox)
+				{
+					ItemSizeBox->SetWidthOverride(WidgetWidth);
+					ItemSizeBox->SetHeightOverride(WidgetHeight);
+					ItemSizeBox->AddChild(NewItemWidget);
+					ItemContainer->AddChildToOverlay(ItemSizeBox);
+				}
+				else
+				{
+					ItemContainer->AddChildToOverlay(NewItemWidget);
+				}
+
+				ItemWidgetInstance = NewItemWidget;
+			}
+		}
 	}
 }
 
 void UUI_ItemSlot::UnbindItem()
 {
+	if (ItemWidgetInstance)
+	{
+		ItemWidgetInstance->RemoveFromParent();
+		ItemWidgetInstance = nullptr;
+	}
+	if (ItemContainer)
+	{
+		ItemContainer->ClearChildren();
+	}
+
 	BoundItem = nullptr;
 	SetOccupied(false);
+}
+
+void UUI_ItemSlot::SetItemWidgetClass(TSubclassOf<UUI_ItemWidget> InItemWidgetClass)
+{
+	ItemWidgetClass = InItemWidgetClass;
+}
+
+void UUI_ItemSlot::SetOwningInventory(UUI_Inventory* InOwningInventory)
+{
+	OwningInventory = InOwningInventory;
 }
 
 FLinearColor UUI_ItemSlot::GetRarityColor(EInventoryItemRarity Rarity) const

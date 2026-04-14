@@ -7,8 +7,8 @@
 UInventoryComponent::UInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	GridWidth = 10;
-	GridHeight = 6;
+	GridWidth = 6;
+	GridHeight = 10;
 	bIsInventoryOpen = false;
 }
 
@@ -18,11 +18,11 @@ void UInventoryComponent::BeginPlay()
 	
 	if (GridWidth <= 0)
 	{
-		GridWidth = 10;
+		GridWidth = 6;
 	}
 	if (GridHeight <= 0)
 	{
-		GridHeight = 6;
+		GridHeight = 10;
 	}
 	
 	InitializeGrid(GridWidth, GridHeight);
@@ -69,35 +69,19 @@ void UInventoryComponent::Clear()
 
 void UInventoryComponent::OpenInventory()
 {
-	UE_LOG(LogTemp, Warning, TEXT("=== UInventoryComponent::OpenInventory called ==="));
-	UE_LOG(LogTemp, Warning, TEXT("Before: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
 	if (!bIsInventoryOpen)
 	{
 		bIsInventoryOpen = true;
-		UE_LOG(LogTemp, Warning, TEXT("Inventory opened, broadcasting delegate"));
 		OnInventoryToggled.Broadcast(bIsInventoryOpen);
-		UE_LOG(LogTemp, Warning, TEXT("After: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Inventory already open, ignoring"));
 	}
 }
 
 void UInventoryComponent::CloseInventory()
 {
-	UE_LOG(LogTemp, Warning, TEXT("=== UInventoryComponent::CloseInventory called ==="));
-	UE_LOG(LogTemp, Warning, TEXT("Before: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
 	if (bIsInventoryOpen)
 	{
 		bIsInventoryOpen = false;
-		UE_LOG(LogTemp, Warning, TEXT("Inventory closed, broadcasting delegate"));
 		OnInventoryToggled.Broadcast(bIsInventoryOpen);
-		UE_LOG(LogTemp, Warning, TEXT("After: bIsInventoryOpen=%s"), bIsInventoryOpen ? TEXT("true") : TEXT("false"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Inventory already closed, ignoring"));
 	}
 }
 

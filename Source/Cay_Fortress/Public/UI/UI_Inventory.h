@@ -11,6 +11,10 @@ class UUniformGridPanel;
 class UUI_ItemSlot;
 class UUI_ItemTooltip;
 class UUI_ItemWidget;
+class UInventoryItemDataAsset;
+class UButton;
+class UComboBoxString;
+class UDragDropOperation;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnItemSlotClicked, UUI_ItemSlot*, ItemSlot);
 
@@ -26,8 +30,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Settings")
 	TSubclassOf<UUI_ItemTooltip> TooltipClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Settings")
+	TSubclassOf<UUI_ItemWidget> ItemWidgetClass;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
 	UUniformGridPanel* GridPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
+	UButton* AddItemButton;
+
+	// Place this ComboBox near AddItemButton in the UMG blueprint.
+	// It is hidden by default and shown when AddItemButton is clicked.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
+	UComboBoxString* AddItemComboBox;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Settings", meta = (ClampMin = "1", UIMin = "1"))
 	int32 GridWidth;
@@ -65,11 +80,50 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	UUI_ItemWidget* GetDraggedItemWidget() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	UUI_ItemSlot* GetSlotAtGrid(int32 GridX, int32 GridY) const;
+
+	UUI_ItemSlot* FindSlotAtScreenPosition(const FVector2D& ScreenPosition) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void UpdatePlacementPreview(class UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void ClearPlacementPreview();
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SetItemHoverPreview(class UInventoryItemInstance* ItemInstance);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void ClearItemHoverPreview(class UInventoryItemInstance* ItemInstance = nullptr);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool TryPlaceDraggedItem(class UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void AddItemFromDataAsset(class UInventoryItemDataAsset* ItemData, int32 StackSize = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	TArray<class UInventoryItemDataAsset*> GetAvailableItemDataAssets() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	TArray<UInventoryItemDataAsset*> GetAllItemDataAssets() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void OnAddItemButtonClicked();
+
+	UFUNCTION()
+	void OnAddItemSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 private:
 	UPROPERTY()
@@ -84,10 +138,18 @@ private:
 	UPROPERTY()
 	UUI_ItemWidget* DraggedItemWidget;
 
+	UPROPERTY(Transient)
+	TMap<FString, TObjectPtr<UInventoryItemDataAsset>> AddItemOptionMap;
+
+	UPROPERTY()
+	TObjectPtr<class UInventoryItemInstance> HoveredItemInstance;
+
 protected:
 	void CreateGrid();
 	void SetSlotSize();
 	void OnItemSlotClickedInternal(UUI_ItemSlot* Slot);
 	void ShowTooltip(UUI_ItemSlot* Slot);
 	void HideTooltip();
+	void RefreshAddItemOptions();
+	void SetAddItemListVisible(bool bVisible);
 };

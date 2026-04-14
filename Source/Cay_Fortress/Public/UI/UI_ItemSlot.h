@@ -8,6 +8,9 @@
 
 class UImage;
 class UOverlay;
+class UUI_ItemWidget;
+class UDragDropOperation;
+class UUI_Inventory;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSlotClicked, UUI_ItemSlot*, Slot);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSlotHovered, UUI_ItemSlot*, Slot);
@@ -49,6 +52,12 @@ public:
 	void SetCanPlace(bool bCanPlace);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void ClearCanPlacePreview();
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SetHoverActive(bool bActive);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool CanPlace() const { return bCanPlaceItem; }
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -67,6 +76,12 @@ public:
 	void UnbindItem();
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SetItemWidgetClass(TSubclassOf<UUI_ItemWidget> InItemWidgetClass);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SetOwningInventory(UUI_Inventory* InOwningInventory);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	UInventoryItemInstance* GetBoundItem() const { return BoundItem; }
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -77,9 +92,15 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 private:
 	UPROPERTY()
@@ -96,6 +117,15 @@ private:
 
 	UPROPERTY()
 	bool bIsOccupied;
+
+	UPROPERTY()
+	TObjectPtr<UUI_ItemWidget> ItemWidgetInstance;
+
+	UPROPERTY()
+	TSubclassOf<UUI_ItemWidget> ItemWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UUI_Inventory> OwningInventory;
 
 	FLinearColor GetRarityColor(EInventoryItemRarity Rarity) const;
 };
