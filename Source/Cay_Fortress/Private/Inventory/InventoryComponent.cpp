@@ -206,6 +206,45 @@ bool UInventoryComponent::MoveItem(class UInventoryItemInstance* ItemInstance, i
 	return true;
 }
 
+bool UInventoryComponent::MoveItemWithShape(
+	class UInventoryItemInstance* ItemInstance,
+	int32 NewSlotX,
+	int32 NewSlotY,
+	int32 NewWidth,
+	int32 NewHeight,
+	const FFItemShapeMask& NewShapeMask,
+	int32 NewRotationQuarterTurns)
+{
+	if (!ItemInstance)
+	{
+		return false;
+	}
+
+	const int32 OldSlotX = ItemInstance->SlotX;
+	const int32 OldSlotY = ItemInstance->SlotY;
+
+	ReleaseGrid(ItemInstance);
+
+	const int32 SafeWidth = FMath::Max(1, NewWidth);
+	const int32 SafeHeight = FMath::Max(1, NewHeight);
+	if (!IsSpaceAvailable(SafeWidth, SafeHeight, NewShapeMask, NewSlotX, NewSlotY, ItemInstance))
+	{
+		OccupyGrid(ItemInstance, OldSlotX, OldSlotY);
+		return false;
+	}
+
+	ItemInstance->Width = SafeWidth;
+	ItemInstance->Height = SafeHeight;
+	ItemInstance->ShapeMask = NewShapeMask;
+	ItemInstance->RotationQuarterTurns = ((NewRotationQuarterTurns % 4) + 4) % 4;
+	ItemInstance->SlotX = NewSlotX;
+	ItemInstance->SlotY = NewSlotY;
+
+	OccupyGrid(ItemInstance, NewSlotX, NewSlotY);
+	NotifyInventoryChanged();
+	return true;
+}
+
 bool UInventoryComponent::IsSpaceAvailable(int32 Width, int32 Height, const FFItemShapeMask& ShapeMask, int32 SlotX, int32 SlotY, class UInventoryItemInstance* IgnoreItem) const
 {
 	for (int32 Y = 0; Y < Height; Y++)

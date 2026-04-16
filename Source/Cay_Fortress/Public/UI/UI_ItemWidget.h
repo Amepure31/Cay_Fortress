@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Inventory/FItemShapeMask.h"
 #include "UI/UI_ItemSlot.h"
 #include "UI_ItemWidget.generated.h"
 
@@ -12,6 +13,7 @@ class UImage;
 class UTextBlock;
 class UDragDropOperation;
 class UUI_Inventory;
+class USizeBox;
 
 UCLASS()
 class CAY_FORTRESS_API UUI_ItemWidget : public UUserWidget
@@ -37,6 +39,30 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	virtual void SetItemInstance(UInventoryItemInstance* InItemInstance);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void BeginDragSession();
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void EndDragSession();
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void RotateDragFootprintClockwise();
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetCurrentDragWidth() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetCurrentDragHeight() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetCurrentDragRotationQuarterTurns() const { return DragRotationQuarterTurns; }
+
+	const FFItemShapeMask& GetCurrentDragShapeMask() const;
+
+	void SetActiveDragVisual(UUI_ItemWidget* InDragVisual);
+	void SetActiveDragVisualHost(USizeBox* InDragVisualHost);
+	void SetActiveDragOperation(UDragDropOperation* InDragOperation);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SetOwningInventory(UUI_Inventory* InOwningInventory) { OwningInventory = InOwningInventory; }
@@ -85,6 +111,34 @@ private:
 	UPROPERTY()
 	TObjectPtr<UUI_Inventory> OwningInventory;
 
+	UPROPERTY()
+	bool bDragSessionActive = false;
+
+	UPROPERTY()
+	int32 DragFootprintWidth = 1;
+
+	UPROPERTY()
+	int32 DragFootprintHeight = 1;
+
+	UPROPERTY()
+	FFItemShapeMask DragFootprintMask;
+
+	UPROPERTY()
+	int32 DragRotationQuarterTurns = 0;
+
+	UPROPERTY()
+	TObjectPtr<UUI_ItemWidget> ActiveDragVisual;
+
+	UPROPERTY()
+	TObjectPtr<USizeBox> ActiveDragVisualHost;
+
+	UPROPERTY()
+	TObjectPtr<UDragDropOperation> ActiveDragOperation;
+
 	void UpdateHoverPreviewByPointer(const FVector2D& ScreenPosition);
 	void UpdateStackSizeDisplay();
+	void UpdateActiveDragVisualHostSize();
+	void UpdateDragOperationAnchor();
+	void ApplyVisualDimensions(int32 InWidth, int32 InHeight);
+	void SetDragFootprintInternal(int32 InWidth, int32 InHeight, const FFItemShapeMask& InMask, int32 InRotationQuarterTurns);
 };

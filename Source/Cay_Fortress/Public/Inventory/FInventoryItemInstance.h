@@ -55,6 +55,10 @@ public:
 	UPROPERTY()
 	FFItemShapeMask ShapeMask;
 
+	/** 旋转角度（顺时针，单位90度） */
+	UPROPERTY()
+	int32 RotationQuarterTurns;
+
 	/** 绑定时间 */
 	UPROPERTY()
 	FDateTime BindTime;
@@ -72,6 +76,7 @@ public:
 		, SlotY(-1)
 		, Width(1)
 		, Height(1)
+		, RotationQuarterTurns(0)
 		, BindTime(FDateTime::MinValue())
 		, bIsBound(false)
 	{
@@ -90,6 +95,7 @@ public:
 			Width = InItemData->ItemData.Width;
 			Height = InItemData->ItemData.Height;
 			ShapeMask.Init(Width, Height, InItemData->ItemData.ShapeMaskData);
+			RotationQuarterTurns = 0;
 			MaxDurability = InItemData->ItemData.bCanStack ? 1 : 100;
 			Durability = MaxDurability;
 		}

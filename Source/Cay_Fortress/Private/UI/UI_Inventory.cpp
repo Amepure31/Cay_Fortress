@@ -21,6 +21,13 @@
 
 namespace
 {
+static constexpr int32 MinInventorySlotSize = 64;
+
+static int32 ClampSlotSizeToMinimum(int32 InSlotSize)
+{
+	return FMath::Max(MinInventorySlotSize, InSlotSize);
+}
+
 static TSubclassOf<UUI_ItemWidget> ResolveDefaultItemWidgetClass()
 {
 	static const FName ItemWidgetFolderPath(TEXT("/Game/UI/WB_UI_Item"));
@@ -62,11 +69,10 @@ static TSubclassOf<UUI_ItemWidget> ResolveDefaultItemWidgetClass()
 	return nullptr;
 }
 
-static bool ExtractDragPayload(UDragDropOperation* InOperation, UUI_ItemWidget*& OutSourceWidget, UInventoryItemInstance*& OutItemInstance)
+static bool ExtractDragPayload(UDragDropOperation* InOperation, UUI_ItemWidget*& OutSourceWidget)
 {
 	OutSourceWidget = InOperation ? Cast<UUI_ItemWidget>(InOperation->Payload) : nullptr;
-	OutItemInstance = OutSourceWidget ? OutSourceWidget->GetItemInstance() : nullptr;
-	return OutSourceWidget && OutItemInstance;
+	return OutSourceWidget && OutSourceWidget->GetItemInstance();
 }
 }
 
@@ -75,6 +81,7 @@ void UUI_Inventory::NativeConstruct()
 	Super::NativeConstruct();
 	SetVisibility(ESlateVisibility::Visible);
 	SetIsEnabled(true);
+	SetIsFocusable(true);
 
 	if (AddItemButton)
 	{
@@ -98,8 +105,9 @@ void UUI_Inventory::NativeConstruct()
 	}
 	if (SlotSize <= 0)
 	{
-		SlotSize = 64;
+		SlotSize = MinInventorySlotSize;
 	}
+	SlotSize = ClampSlotSizeToMinimum(SlotSize);
 	if (SlotSpacing < 0)
 	{
 		SlotSpacing = 0;
@@ -128,6 +136,29 @@ void UUI_Inventory::NativeConstruct()
 	}
 }
 
+FReply UUI_Inventory::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (DraggedItemWidget && InKeyEvent.GetKey() == EKeys::R)
+	{
+		DraggedItemWidget->RotateDragFootprintClockwise();
+
+		const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+		if (UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos))
+		{
+			const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
+			const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
+			UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
+		}
+		else
+		{
+			ClearPlacementPreview();
+		}
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
 FReply UUI_Inventory::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
@@ -137,21 +168,20 @@ FReply UUI_Inventory::NativeOnMouseButtonUp(const FGeometry& InGeometry, const F
 {
 	if (DraggedItemWidget && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
-		UInventoryItemInstance* ItemInstance = DraggedItemWidget->GetItemInstance();
 		UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(InMouseEvent.GetScreenSpacePosition());
 		bool bPlaced = false;
-		if (ItemInstance && HoveredSlot)
+		if (HoveredSlot)
 		{
 			const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
 			const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
-			bPlaced = TryPlaceDraggedItem(ItemInstance, TargetOriginX, TargetOriginY);
+			bPlaced = TryPlaceDraggedItem(DraggedItemWidget, TargetOriginX, TargetOriginY);
 		}
 		if (!bPlaced)
 		{
 			UpdateInventory();
 			ClearPlacementPreview();
 		}
-		DraggedItemWidget = nullptr;
+		SetDraggedItemWidget(nullptr);
 		return FReply::Handled();
 	}
 
@@ -168,10 +198,9 @@ void UUI_Inventory::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		return;
 	}
 
-	UInventoryItemInstance* ItemInstance = DraggedItemWidget->GetItemInstance();
-	if (!ItemInstance)
+	if (!DraggedItemWidget->GetItemInstance())
 	{
-		DraggedItemWidget = nullptr;
+		SetDraggedItemWidget(nullptr);
 		ClearPlacementPreview();
 		return;
 	}
@@ -186,14 +215,13 @@ void UUI_Inventory::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
 	const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
-	UpdatePlacementPreview(ItemInstance, TargetOriginX, TargetOriginY);
+	UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
 }
 
 bool UUI_Inventory::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
 	UUI_ItemWidget* SourceItemWidget = nullptr;
-	UInventoryItemInstance* ItemInstance = nullptr;
-	if (!ExtractDragPayload(InOperation, SourceItemWidget, ItemInstance))
+	if (!ExtractDragPayload(InOperation, SourceItemWidget))
 	{
 		return Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
 	}
@@ -207,7 +235,7 @@ bool UUI_Inventory::NativeOnDragOver(const FGeometry& InGeometry, const FDragDro
 
 	const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
 	const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
-	UpdatePlacementPreview(ItemInstance, TargetOriginX, TargetOriginY);
+	UpdatePlacementPreview(SourceItemWidget, TargetOriginX, TargetOriginY);
 	return true;
 }
 
@@ -220,8 +248,7 @@ void UUI_Inventory::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDr
 bool UUI_Inventory::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
 	UUI_ItemWidget* SourceItemWidget = nullptr;
-	UInventoryItemInstance* ItemInstance = nullptr;
-	if (!ExtractDragPayload(InOperation, SourceItemWidget, ItemInstance))
+	if (!ExtractDragPayload(InOperation, SourceItemWidget))
 	{
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
 	}
@@ -236,8 +263,8 @@ bool UUI_Inventory::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEve
 
 	const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
 	const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
-	const bool bPlaced = TryPlaceDraggedItem(ItemInstance, TargetOriginX, TargetOriginY);
-	DraggedItemWidget = nullptr;
+	const bool bPlaced = TryPlaceDraggedItem(SourceItemWidget, TargetOriginX, TargetOriginY);
+	SetDraggedItemWidget(nullptr);
 	return bPlaced;
 }
 
@@ -260,7 +287,7 @@ void UUI_Inventory::NativeDestruct()
 	BoundInventory = nullptr;
 	ItemSlots.Empty();
 	ActiveTooltip = nullptr;
-	DraggedItemWidget = nullptr;
+	SetDraggedItemWidget(nullptr);
 	HoveredItemInstance = nullptr;
 	Super::NativeDestruct();
 }
@@ -308,9 +335,32 @@ void UUI_Inventory::UpdateInventory()
 				continue;
 			}
 
-			int32 Width = Item->Width;
-			int32 Height = Item->Height;
-			bool bItemWidgetBound = false;
+			const int32 Width = Item->Width;
+			const int32 Height = Item->Height;
+
+			// Always bind the visual widget to the logical item origin.
+			// For irregular shapes, (0,0) can be empty after rotation; binding to "first occupied"
+			// causes one-cell drift between visual, occupancy and interaction.
+			const UInventoryItemInstance* const ItemConst = Item;
+			const bool bOriginOccupied =
+				(ItemConst->ShapeMask.Width <= 0 || ItemConst->ShapeMask.Height <= 0) ||
+				ItemConst->ShapeMask.IsOccupied(0, 0);
+
+			const int32 OriginGridX = Item->SlotX;
+			const int32 OriginGridY = Item->SlotY;
+			if (OriginGridX >= 0 && OriginGridX < BoundInventory->GridWidth &&
+				OriginGridY >= 0 && OriginGridY < BoundInventory->GridHeight)
+			{
+				const int32 OriginIndex = OriginGridY * BoundInventory->GridWidth + OriginGridX;
+				if (OriginIndex >= 0 && OriginIndex < ItemSlots.Num())
+				{
+					ItemSlots[OriginIndex]->BindItem(Item);
+					if (!bOriginOccupied)
+					{
+						ItemSlots[OriginIndex]->SetOccupied(false);
+					}
+				}
+			}
 
 			for (int32 Y = 0; Y < Height; Y++)
 			{
@@ -333,12 +383,8 @@ void UUI_Inventory::UpdateInventory()
 							int32 Index = GridY * BoundInventory->GridWidth + GridX;
 							if (Index >= 0 && Index < ItemSlots.Num())
 							{
-								if (!bItemWidgetBound)
-								{
-									ItemSlots[Index]->BindItem(Item);
-									bItemWidgetBound = true;
-								}
-								else
+								const bool bIsOriginCell = (GridX == OriginGridX && GridY == OriginGridY);
+								if (!bIsOriginCell || !bOriginOccupied)
 								{
 									ItemSlots[Index]->SetOccupied(true, Item->ItemData->ItemData.Rarity);
 								}
@@ -376,7 +422,8 @@ void UUI_Inventory::CreateGrid()
 
 	int32 GridWidthToUse = GridWidth > 0 ? GridWidth : (BoundInventory ? BoundInventory->GridWidth : 6);
 	int32 GridHeightToUse = GridHeight > 0 ? GridHeight : (BoundInventory ? BoundInventory->GridHeight : 10);
-	int32 SlotSizeToUse = SlotSize > 0 ? SlotSize : 64;
+	int32 SlotSizeToUse = SlotSize > 0 ? SlotSize : MinInventorySlotSize;
+	SlotSizeToUse = ClampSlotSizeToMinimum(SlotSizeToUse);
 	int32 SlotSpacingToUse = SlotSpacing >= 0 ? SlotSpacing : 0;
 
 	for (int32 Y = 0; Y < GridHeightToUse; Y++)
@@ -412,11 +459,18 @@ void UUI_Inventory::SetSlotSize()
 		return;
 	}
 	
-	int32 SizeToUse = SlotSize > 0 ? SlotSize : 64;
+	int32 SizeToUse = SlotSize > 0 ? SlotSize : MinInventorySlotSize;
+	SizeToUse = ClampSlotSizeToMinimum(SizeToUse);
 	int32 SpacingToUse = SlotSpacing >= 0 ? SlotSpacing : 0;
 	
 	GridPanel->SetMinDesiredSlotWidth(SizeToUse + SpacingToUse);
 	GridPanel->SetMinDesiredSlotHeight(SizeToUse + SpacingToUse);
+}
+
+int32 UUI_Inventory::GetEffectiveSlotSize() const
+{
+	const int32 SizeToUse = SlotSize > 0 ? SlotSize : MinInventorySlotSize;
+	return ClampSlotSizeToMinimum(SizeToUse);
 }
 
 void UUI_Inventory::UpdateSlotCanPlacePreviews(UUI_ItemWidget* ItemWidget)
@@ -472,12 +526,63 @@ void UUI_Inventory::HideTooltip()
 
 void UUI_Inventory::SetDraggedItemWidget(UUI_ItemWidget* InWidget)
 {
+	if (DraggedItemWidget && DraggedItemWidget != InWidget)
+	{
+		DraggedItemWidget->EndDragSession();
+	}
+
 	DraggedItemWidget = InWidget;
+	if (DraggedItemWidget)
+	{
+		SetKeyboardFocus();
+		SuppressDraggedItemSlotVisuals(DraggedItemWidget->GetItemInstance());
+	}
+	else
+	{
+		ClearPlacementPreview();
+	}
 }
 
 UUI_ItemWidget* UUI_Inventory::GetDraggedItemWidget() const
 {
 	return DraggedItemWidget;
+}
+
+void UUI_Inventory::SuppressDraggedItemSlotVisuals(UInventoryItemInstance* ItemInstance)
+{
+	if (!BoundInventory || !ItemInstance)
+	{
+		return;
+	}
+
+	const int32 Width = FMath::Max(1, ItemInstance->Width);
+	const int32 Height = FMath::Max(1, ItemInstance->Height);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			bool bShouldAffect = true;
+			if (ItemInstance->ShapeMask.Width > 0 && ItemInstance->ShapeMask.Height > 0)
+			{
+				bShouldAffect = ItemInstance->ShapeMask.IsOccupied(X, Y);
+			}
+			if (!bShouldAffect)
+			{
+				continue;
+			}
+
+			const int32 GridX = ItemInstance->SlotX + X;
+			const int32 GridY = ItemInstance->SlotY + Y;
+			UUI_ItemSlot* GridSlot = GetSlotAtGrid(GridX, GridY);
+			if (!GridSlot)
+			{
+				continue;
+			}
+
+			// During drag, hide source occupancy tint so only drag visual remains.
+			GridSlot->SetOccupied(false);
+		}
+	}
 }
 
 UUI_ItemSlot* UUI_Inventory::GetSlotAtGrid(int32 GridX, int32 GridY) const
@@ -502,26 +607,33 @@ UUI_ItemSlot* UUI_Inventory::GetSlotAtGrid(int32 GridX, int32 GridY) const
 	return ItemSlots[Index];
 }
 
-void UUI_Inventory::UpdatePlacementPreview(UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY)
+void UUI_Inventory::UpdatePlacementPreview(UUI_ItemWidget* ItemWidget, int32 OriginSlotX, int32 OriginSlotY)
 {
 	ClearPlacementPreview();
 
-	if (!BoundInventory || !ItemInstance)
+	if (!BoundInventory || !ItemWidget)
 	{
 		return;
 	}
 
-	const int32 Width = FMath::Max(1, ItemInstance->Width);
-	const int32 Height = FMath::Max(1, ItemInstance->Height);
+	UInventoryItemInstance* ItemInstance = ItemWidget->GetItemInstance();
+	if (!ItemInstance)
+	{
+		return;
+	}
+
+	const int32 Width = FMath::Max(1, ItemWidget->GetCurrentDragWidth());
+	const int32 Height = FMath::Max(1, ItemWidget->GetCurrentDragHeight());
+	const FFItemShapeMask& ShapeMask = ItemWidget->GetCurrentDragShapeMask();
 
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
 		for (int32 X = 0; X < Width; ++X)
 		{
 			bool bShouldOccupy = true;
-			if (ItemInstance->ShapeMask.Width > 0 && ItemInstance->ShapeMask.Height > 0)
+			if (ShapeMask.Width > 0 && ShapeMask.Height > 0)
 			{
-				bShouldOccupy = ItemInstance->ShapeMask.IsOccupied(X, Y);
+				bShouldOccupy = ShapeMask.IsOccupied(X, Y);
 			}
 			if (!bShouldOccupy)
 			{
@@ -620,28 +732,35 @@ void UUI_Inventory::ClearItemHoverPreview(UInventoryItemInstance* ItemInstance)
 	HoveredItemInstance = nullptr;
 }
 
-bool UUI_Inventory::TryPlaceDraggedItem(UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY)
+bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 OriginSlotX, int32 OriginSlotY)
 {
-	if (!BoundInventory || !ItemInstance)
+	if (!BoundInventory || !ItemWidget)
 	{
 		ClearPlacementPreview();
 		return false;
 	}
 
-	const bool bCanPlace = BoundInventory->IsSpaceAvailable(
-		ItemInstance->Width,
-		ItemInstance->Height,
-		ItemInstance->ShapeMask,
+	UInventoryItemInstance* ItemInstance = ItemWidget->GetItemInstance();
+	if (!ItemInstance)
+	{
+		ClearPlacementPreview();
+		return false;
+	}
+
+	const int32 NewWidth = FMath::Max(1, ItemWidget->GetCurrentDragWidth());
+	const int32 NewHeight = FMath::Max(1, ItemWidget->GetCurrentDragHeight());
+	const FFItemShapeMask& NewShapeMask = ItemWidget->GetCurrentDragShapeMask();
+	const int32 NewRotationQuarterTurns = ItemWidget->GetCurrentDragRotationQuarterTurns();
+
+	const bool bMoved = BoundInventory->MoveItemWithShape(
+		ItemInstance,
 		OriginSlotX,
 		OriginSlotY,
-		ItemInstance
+		NewWidth,
+		NewHeight,
+		NewShapeMask,
+		NewRotationQuarterTurns
 	);
-
-	bool bMoved = false;
-	if (bCanPlace)
-	{
-		bMoved = BoundInventory->MoveItem(ItemInstance, OriginSlotX, OriginSlotY);
-	}
 
 	ClearPlacementPreview();
 	if (!bMoved)

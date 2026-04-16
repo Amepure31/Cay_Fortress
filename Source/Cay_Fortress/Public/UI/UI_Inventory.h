@@ -81,12 +81,15 @@ public:
 	UUI_ItemWidget* GetDraggedItemWidget() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 GetEffectiveSlotSize() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	UUI_ItemSlot* GetSlotAtGrid(int32 GridX, int32 GridY) const;
 
 	UUI_ItemSlot* FindSlotAtScreenPosition(const FVector2D& ScreenPosition) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
-	void UpdatePlacementPreview(class UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY);
+	void UpdatePlacementPreview(class UUI_ItemWidget* ItemWidget, int32 OriginSlotX, int32 OriginSlotY);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void ClearPlacementPreview();
@@ -98,7 +101,7 @@ public:
 	void ClearItemHoverPreview(class UInventoryItemInstance* ItemInstance = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
-	bool TryPlaceDraggedItem(class UInventoryItemInstance* ItemInstance, int32 OriginSlotX, int32 OriginSlotY);
+	bool TryPlaceDraggedItem(class UUI_ItemWidget* ItemWidget, int32 OriginSlotX, int32 OriginSlotY);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void AddItemFromDataAsset(class UInventoryItemDataAsset* ItemData, int32 StackSize = 1);
@@ -119,6 +122,7 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
@@ -126,6 +130,8 @@ protected:
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 private:
+	void SuppressDraggedItemSlotVisuals(class UInventoryItemInstance* ItemInstance);
+
 	UPROPERTY()
 	UInventoryComponent* BoundInventory;
 

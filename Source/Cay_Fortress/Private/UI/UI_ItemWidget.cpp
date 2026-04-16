@@ -1,7 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/UI_ItemWidget.h"
+#include "Components/BorderSlot.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/OverlaySlot.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/PanelWidget.h"
 #include "Inventory/InventoryItemRarity.h"
@@ -13,6 +17,178 @@
 #include "Widgets/SWidget.h"
 #include "Blueprint/DragDropOperation.h"
 
+namespace
+{
+static constexpr float MinItemCellPixelSize = 64.0f;
+
+static UWidget* CreateConstrainedDragVisual(
+	UObject* Outer,
+	UUI_ItemWidget* DragVisual,
+	const UUI_Inventory* InventoryWidget,
+	int32 FootprintWidth,
+	int32 FootprintHeight)
+{
+	if (!DragVisual || !Outer)
+	{
+		return DragVisual;
+	}
+
+	float CellPixelSize = MinItemCellPixelSize;
+	if (InventoryWidget)
+	{
+		CellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
+	}
+
+	USizeBox* DragHostSizeBox = NewObject<USizeBox>(Outer);
+	if (!DragHostSizeBox)
+	{
+		return DragVisual;
+	}
+
+	DragHostSizeBox->SetWidthOverride(static_cast<float>(FMath::Max(1, FootprintWidth)) * CellPixelSize);
+	DragHostSizeBox->SetHeightOverride(static_cast<float>(FMath::Max(1, FootprintHeight)) * CellPixelSize);
+	DragHostSizeBox->AddChild(DragVisual);
+	return DragHostSizeBox;
+}
+
+static FFItemShapeMask MakeFullMask(int32 Width, int32 Height)
+{
+	FFItemShapeMask Result;
+	Result.Width = FMath::Max(1, Width);
+	Result.Height = FMath::Max(1, Height);
+	Result.ShapeMaskData.Init(1, Result.Width * Result.Height);
+	return Result;
+}
+
+static FFItemShapeMask NormalizeMask(const FFItemShapeMask& InMask, int32 Width, int32 Height)
+{
+	const int32 SafeWidth = FMath::Max(1, Width);
+	const int32 SafeHeight = FMath::Max(1, Height);
+	if (InMask.Width <= 0 || InMask.Height <= 0 || InMask.ShapeMaskData.Num() < InMask.Width * InMask.Height)
+	{
+		return MakeFullMask(SafeWidth, SafeHeight);
+	}
+
+	FFItemShapeMask Result;
+	Result.Width = SafeWidth;
+	Result.Height = SafeHeight;
+	Result.ShapeMaskData.Init(0, SafeWidth * SafeHeight);
+	for (int32 Y = 0; Y < SafeHeight; ++Y)
+	{
+		for (int32 X = 0; X < SafeWidth; ++X)
+		{
+			Result.ShapeMaskData[Y * SafeWidth + X] = InMask.IsOccupied(X, Y) ? 1 : 0;
+		}
+	}
+	return Result;
+}
+
+static FFItemShapeMask RotateMaskClockwise(const FFItemShapeMask& InMask)
+{
+	const int32 OldWidth = FMath::Max(1, InMask.Width);
+	const int32 OldHeight = FMath::Max(1, InMask.Height);
+	const int32 NewWidth = OldHeight;
+	const int32 NewHeight = OldWidth;
+
+	FFItemShapeMask RotatedMask;
+	RotatedMask.Width = NewWidth;
+	RotatedMask.Height = NewHeight;
+	RotatedMask.ShapeMaskData.Init(0, NewWidth * NewHeight);
+
+	for (int32 Y = 0; Y < OldHeight; ++Y)
+	{
+		for (int32 X = 0; X < OldWidth; ++X)
+		{
+			if (!InMask.IsOccupied(X, Y))
+			{
+				continue;
+			}
+
+			const int32 RotatedX = OldHeight - 1 - Y;
+			const int32 RotatedY = X;
+			RotatedMask.ShapeMaskData[RotatedY * NewWidth + RotatedX] = 1;
+		}
+	}
+
+	return RotatedMask;
+}
+
+static void ForceStackTextBottomRight(UTextBlock* StackText, const FVector2D* ItemPixelSize)
+{
+	if (!StackText || !StackText->Slot)
+	{
+		return;
+	}
+
+	StackText->SetJustification(ETextJustify::Right);
+
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StackText->Slot))
+	{
+		CanvasSlot->SetAutoSize(true);
+		CanvasSlot->SetAlignment(FVector2D(1.0f, 1.0f));
+		CanvasSlot->SetZOrder(100);
+		StackText->SetRenderTransformPivot(FVector2D(1.0f, 1.0f));
+		StackText->SetRenderTranslation(FVector2D::ZeroVector);
+		if (ItemPixelSize)
+		{
+			// Pin text bottom-right using slot position; this is resilient to container transforms.
+			CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+			CanvasSlot->SetPosition(FVector2D(ItemPixelSize->X - 4.0f, ItemPixelSize->Y - 4.0f));
+			CanvasSlot->SetSize(FVector2D::ZeroVector);
+		}
+		else
+		{
+			CanvasSlot->SetAnchors(FAnchors(1.0f, 1.0f, 1.0f, 1.0f));
+			CanvasSlot->SetOffsets(FMargin(-4.0f, -4.0f, 0.0f, 0.0f));
+		}
+	}
+	else if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(StackText->Slot))
+	{
+		StackText->SetRenderTranslation(FVector2D::ZeroVector);
+		OverlaySlot->SetPadding(FMargin(0.0f, 0.0f, 4.0f, 4.0f));
+		OverlaySlot->SetHorizontalAlignment(HAlign_Right);
+		OverlaySlot->SetVerticalAlignment(VAlign_Bottom);
+	}
+	else if (UBorderSlot* BorderSlot = Cast<UBorderSlot>(StackText->Slot))
+	{
+		StackText->SetRenderTranslation(FVector2D::ZeroVector);
+		BorderSlot->SetPadding(FMargin(0.0f, 0.0f, 4.0f, 4.0f));
+		BorderSlot->SetHorizontalAlignment(HAlign_Right);
+		BorderSlot->SetVerticalAlignment(VAlign_Bottom);
+	}
+}
+
+static void NormalizeItemIconSlot(UImage* ItemIcon)
+{
+	if (!ItemIcon || !ItemIcon->Slot)
+	{
+		return;
+	}
+
+	// Root canvas slots can keep designer-time offsets that skew runtime layout.
+	// Normalize the slot so icon starts at (0,0) and scales from desired size.
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(ItemIcon->Slot))
+	{
+		CanvasSlot->SetAutoSize(true);
+		CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+		CanvasSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		CanvasSlot->SetOffsets(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
+	}
+	else if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(ItemIcon->Slot))
+	{
+		OverlaySlot->SetPadding(FMargin(0.0f));
+		OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlaySlot->SetVerticalAlignment(VAlign_Fill);
+	}
+	else if (UBorderSlot* BorderSlot = Cast<UBorderSlot>(ItemIcon->Slot))
+	{
+		BorderSlot->SetPadding(FMargin(0.0f));
+		BorderSlot->SetHorizontalAlignment(HAlign_Fill);
+		BorderSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+}
+}
+
 UInventoryItemInstance* UUI_ItemWidget::GetItemInstance() const
 {
 	return BoundItem;
@@ -21,65 +197,223 @@ UInventoryItemInstance* UUI_ItemWidget::GetItemInstance() const
 void UUI_ItemWidget::SetItemInstance(UInventoryItemInstance* InItemInstance)
 {
 	BoundItem = InItemInstance;
+	bDragSessionActive = false;
+	DragRotationQuarterTurns = (BoundItem ? ((BoundItem->RotationQuarterTurns % 4) + 4) % 4 : 0);
+	ActiveDragVisual = nullptr;
+	ActiveDragVisualHost = nullptr;
+	ActiveDragOperation = nullptr;
 	if (!InItemInstance || !InItemInstance->ItemData)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ItemWidget][Bind] Invalid item instance or item data."));
 		return;
 	}
 
-	const FString ItemName = InItemInstance->ItemData->ItemData.ItemName.IsEmpty()
-		? InItemInstance->GetName()
-		: InItemInstance->ItemData->ItemData.ItemName.ToString();
-	UE_LOG(
-		LogTemp,
-		Warning,
-		TEXT("[ItemWidget][Bind] Item='%s' GridSize=%dx%d MaskSize=%dx%d"),
-		*ItemName,
-		InItemInstance->Width,
-		InItemInstance->Height,
-		InItemInstance->ShapeMask.Width,
-		InItemInstance->ShapeMask.Height
-	);
-
-	if (InItemInstance && InItemInstance->ItemData)
+	if (ItemIcon)
 	{
-		if (ItemIcon)
-		{
-			UTexture2D* IconTexture = InItemInstance->ItemData->ItemData.Icon;
-			ItemIcon->SetBrushFromTexture(IconTexture);
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("[ItemWidget][Bind] Item='%s' Texture='%s' TextureSize=%dx%d"),
-				*ItemName,
-				*GetNameSafe(IconTexture),
-				IconTexture ? IconTexture->GetSizeX() : 0,
-				IconTexture ? IconTexture->GetSizeY() : 0
-			);
-
-			// Keep icon aspect ratio aligned with item grid dimensions (e.g. 1x2, 3x2),
-			// so different items can share one widget class without inheriting a fixed visual ratio.
-			const float AspectWidth = static_cast<float>(FMath::Max(1, InItemInstance->Width));
-			const float AspectHeight = static_cast<float>(FMath::Max(1, InItemInstance->Height));
-			const FVector2D DesiredIconSize = FVector2D(AspectWidth, AspectHeight) * 100.0f;
-			ItemIcon->SetDesiredSizeOverride(DesiredIconSize);
-
-			FSlateBrush IconBrush = ItemIcon->GetBrush();
-			IconBrush.SetImageSize(DesiredIconSize);
-			ItemIcon->SetBrush(IconBrush);
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("[ItemWidget][Bind] Item='%s' DesiredIconSize=(%.1f,%.1f) BrushImageSize=(%.1f,%.1f)"),
-				*ItemName,
-				DesiredIconSize.X,
-				DesiredIconSize.Y,
-				IconBrush.ImageSize.X,
-				IconBrush.ImageSize.Y
-			);
-		}
-		UpdateStackSizeDisplay();
+		UTexture2D* IconTexture = InItemInstance->ItemData->ItemData.Icon;
+		ItemIcon->SetBrushFromTexture(IconTexture);
+		NormalizeItemIconSlot(ItemIcon);
 	}
+	ApplyVisualDimensions(InItemInstance->Width, InItemInstance->Height);
+	UpdateStackSizeDisplay();
+}
+
+void UUI_ItemWidget::BeginDragSession()
+{
+	if (!BoundItem)
+	{
+		return;
+	}
+
+	bDragSessionActive = true;
+	DragRotationQuarterTurns = ((BoundItem->RotationQuarterTurns % 4) + 4) % 4;
+	DragFootprintWidth = FMath::Max(1, BoundItem->Width);
+	DragFootprintHeight = FMath::Max(1, BoundItem->Height);
+	DragFootprintMask = NormalizeMask(BoundItem->ShapeMask, DragFootprintWidth, DragFootprintHeight);
+}
+
+void UUI_ItemWidget::EndDragSession()
+{
+	bDragSessionActive = false;
+	DragRotationQuarterTurns = (BoundItem ? ((BoundItem->RotationQuarterTurns % 4) + 4) % 4 : 0);
+	ActiveDragVisual = nullptr;
+	ActiveDragVisualHost = nullptr;
+	ActiveDragOperation = nullptr;
+
+	if (BoundItem)
+	{
+		ApplyVisualDimensions(BoundItem->Width, BoundItem->Height);
+	}
+}
+
+void UUI_ItemWidget::RotateDragFootprintClockwise()
+{
+	if (!bDragSessionActive || !BoundItem)
+	{
+		return;
+	}
+
+	const int32 PreviousHeight = DragFootprintHeight;
+	const int32 PreviousGrabX = DragGrabCellX;
+	const int32 PreviousGrabY = DragGrabCellY;
+
+	DragFootprintMask = RotateMaskClockwise(DragFootprintMask);
+	DragFootprintWidth = DragFootprintMask.Width;
+	DragFootprintHeight = DragFootprintMask.Height;
+	DragRotationQuarterTurns = (DragRotationQuarterTurns + 1) % 4;
+
+	// Keep the cursor attached to the same occupied cell after rotation.
+	DragGrabCellX = PreviousHeight - 1 - PreviousGrabY;
+	DragGrabCellY = PreviousGrabX;
+	DragGrabCellX = FMath::Clamp(DragGrabCellX, 0, FMath::Max(0, DragFootprintWidth - 1));
+	DragGrabCellY = FMath::Clamp(DragGrabCellY, 0, FMath::Max(0, DragFootprintHeight - 1));
+
+	ApplyVisualDimensions(DragFootprintWidth, DragFootprintHeight);
+
+	if (ActiveDragVisual && ActiveDragVisual != this)
+	{
+		ActiveDragVisual->SetDragFootprintInternal(DragFootprintWidth, DragFootprintHeight, DragFootprintMask, DragRotationQuarterTurns);
+	}
+	UpdateActiveDragVisualHostSize();
+	UpdateDragOperationAnchor();
+}
+
+int32 UUI_ItemWidget::GetCurrentDragWidth() const
+{
+	return bDragSessionActive ? DragFootprintWidth : (BoundItem ? FMath::Max(1, BoundItem->Width) : 1);
+}
+
+int32 UUI_ItemWidget::GetCurrentDragHeight() const
+{
+	return bDragSessionActive ? DragFootprintHeight : (BoundItem ? FMath::Max(1, BoundItem->Height) : 1);
+}
+
+const FFItemShapeMask& UUI_ItemWidget::GetCurrentDragShapeMask() const
+{
+	if (bDragSessionActive || !BoundItem)
+	{
+		return DragFootprintMask;
+	}
+	return BoundItem->ShapeMask;
+}
+
+void UUI_ItemWidget::SetActiveDragVisual(UUI_ItemWidget* InDragVisual)
+{
+	ActiveDragVisual = InDragVisual;
+	if (ActiveDragVisual && bDragSessionActive)
+	{
+		ActiveDragVisual->SetDragFootprintInternal(DragFootprintWidth, DragFootprintHeight, DragFootprintMask, DragRotationQuarterTurns);
+	}
+}
+
+void UUI_ItemWidget::SetActiveDragVisualHost(USizeBox* InDragVisualHost)
+{
+	ActiveDragVisualHost = InDragVisualHost;
+	UpdateActiveDragVisualHostSize();
+}
+
+void UUI_ItemWidget::SetActiveDragOperation(UDragDropOperation* InDragOperation)
+{
+	ActiveDragOperation = InDragOperation;
+	UpdateDragOperationAnchor();
+}
+
+void UUI_ItemWidget::UpdateActiveDragVisualHostSize()
+{
+	if (!ActiveDragVisualHost)
+	{
+		return;
+	}
+
+	float CellPixelSize = MinItemCellPixelSize;
+	if (const UUI_Inventory* InventoryWidget = OwningInventory.Get())
+	{
+		CellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
+	}
+
+	ActiveDragVisualHost->SetWidthOverride(static_cast<float>(GetCurrentDragWidth()) * CellPixelSize);
+	ActiveDragVisualHost->SetHeightOverride(static_cast<float>(GetCurrentDragHeight()) * CellPixelSize);
+}
+
+void UUI_ItemWidget::UpdateDragOperationAnchor()
+{
+	if (!ActiveDragOperation)
+	{
+		return;
+	}
+
+	const int32 Width = FMath::Max(1, GetCurrentDragWidth());
+	const int32 Height = FMath::Max(1, GetCurrentDragHeight());
+	const int32 ClampedGrabX = FMath::Clamp(DragGrabCellX, 0, Width - 1);
+	const int32 ClampedGrabY = FMath::Clamp(DragGrabCellY, 0, Height - 1);
+
+	const float RelativeX = (static_cast<float>(ClampedGrabX) + 0.5f) / static_cast<float>(Width);
+	const float RelativeY = (static_cast<float>(ClampedGrabY) + 0.5f) / static_cast<float>(Height);
+
+	// Keep cursor anchored to the same logical grabbed grid cell after rotation.
+	ActiveDragOperation->Pivot = EDragPivot::TopLeft;
+	ActiveDragOperation->Offset = FVector2D(-RelativeX, -RelativeY);
+}
+
+void UUI_ItemWidget::ApplyVisualDimensions(int32 InWidth, int32 InHeight)
+{
+	if (!ItemIcon)
+	{
+		ForceStackTextBottomRight(StackSizeText, nullptr);
+		return;
+	}
+
+	const float FootprintWidthCells = static_cast<float>(FMath::Max(1, InWidth));
+	const float FootprintHeightCells = static_cast<float>(FMath::Max(1, InHeight));
+	const bool bOddQuarterTurn = (DragRotationQuarterTurns & 1) != 0;
+	const float RenderWidthCells = bOddQuarterTurn ? FootprintHeightCells : FootprintWidthCells;
+	const float RenderHeightCells = bOddQuarterTurn ? FootprintWidthCells : FootprintHeightCells;
+
+	float BaseCellPixelSize = MinItemCellPixelSize;
+	if (const UUI_Inventory* InventoryWidget = OwningInventory.Get())
+	{
+		BaseCellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
+	}
+
+	const FVector2D FootprintPixelSize = FVector2D(FootprintWidthCells, FootprintHeightCells) * BaseCellPixelSize;
+	const FVector2D RenderPixelSize = FVector2D(RenderWidthCells, RenderHeightCells) * BaseCellPixelSize;
+	ItemIcon->SetDesiredSizeOverride(RenderPixelSize);
+	ForceStackTextBottomRight(StackSizeText, &FootprintPixelSize);
+
+	FSlateBrush IconBrush = ItemIcon->GetBrush();
+	IconBrush.SetImageSize(RenderPixelSize);
+	ItemIcon->SetBrush(IconBrush);
+	ItemIcon->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+	ItemIcon->SetRenderTransformAngle(static_cast<float>(DragRotationQuarterTurns * 90));
+
+	const FVector2D CenteringOffset = (FootprintPixelSize - RenderPixelSize) * 0.5f;
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(ItemIcon->Slot))
+	{
+		CanvasSlot->SetAutoSize(false);
+		CanvasSlot->SetSize(RenderPixelSize);
+		CanvasSlot->SetPosition(CenteringOffset);
+	}
+	else if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(ItemIcon->Slot))
+	{
+		OverlaySlot->SetPadding(FMargin(0.0f));
+		OverlaySlot->SetHorizontalAlignment(HAlign_Center);
+		OverlaySlot->SetVerticalAlignment(VAlign_Center);
+	}
+	else if (UBorderSlot* BorderSlot = Cast<UBorderSlot>(ItemIcon->Slot))
+	{
+		BorderSlot->SetPadding(FMargin(0.0f));
+		BorderSlot->SetHorizontalAlignment(HAlign_Center);
+		BorderSlot->SetVerticalAlignment(VAlign_Center);
+	}
+}
+
+void UUI_ItemWidget::SetDragFootprintInternal(int32 InWidth, int32 InHeight, const FFItemShapeMask& InMask, int32 InRotationQuarterTurns)
+{
+	bDragSessionActive = true;
+	DragFootprintWidth = FMath::Max(1, InWidth);
+	DragFootprintHeight = FMath::Max(1, InHeight);
+	DragFootprintMask = NormalizeMask(InMask, DragFootprintWidth, DragFootprintHeight);
+	DragRotationQuarterTurns = ((InRotationQuarterTurns % 4) + 4) % 4;
+	ApplyVisualDimensions(DragFootprintWidth, DragFootprintHeight);
 }
 
 void UUI_ItemWidget::OnDraggedOver(UUI_ItemSlot* TargetSlot, bool bCanPlace)
@@ -115,6 +449,7 @@ void UUI_ItemWidget::OnDragCancelled()
 void UUI_ItemWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	ForceStackTextBottomRight(StackSizeText, nullptr);
 	// Keep BoundItem assigned by SetItemInstance; do not reset here.
 }
 
@@ -213,19 +548,31 @@ void UUI_ItemWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPo
 	{
 		return;
 	}
+	BeginDragSession();
 
 	UUI_ItemWidget* DragVisual = CreateWidget<UUI_ItemWidget>(GetWorld(), GetClass());
+	UWidget* DragVisualHost = DragVisual;
 	if (DragVisual)
 	{
+		DragVisual->SetOwningInventory(OwningInventory.Get());
 		DragVisual->SetItemInstance(BoundItem);
 		DragVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+		SetActiveDragVisual(DragVisual);
+		DragVisualHost = CreateConstrainedDragVisual(
+			this,
+			DragVisual,
+			OwningInventory.Get(),
+			GetCurrentDragWidth(),
+			GetCurrentDragHeight()
+		);
+		SetActiveDragVisualHost(Cast<USizeBox>(DragVisualHost));
 	}
 
 	DragOperation->Payload = this;
-	DragOperation->DefaultDragVisual = DragVisual;
-	DragOperation->Pivot = EDragPivot::MouseDown;
+	DragOperation->DefaultDragVisual = DragVisualHost;
+	SetActiveDragOperation(DragOperation);
 	OutOperation = DragOperation;
-	SetVisibility(ESlateVisibility::HitTestInvisible);
+	SetVisibility(ESlateVisibility::Hidden);
 	if (UUI_Inventory* InventoryWidget = OwningInventory.Get())
 	{
 		InventoryWidget->SetDraggedItemWidget(this);
@@ -241,6 +588,10 @@ void UUI_ItemWidget::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent
 		InventoryWidget->ClearPlacementPreview();
 		InventoryWidget->UpdateInventory();
 		InventoryWidget->SetDraggedItemWidget(nullptr);
+	}
+	else
+	{
+		EndDragSession();
 	}
 	SetVisibility(ESlateVisibility::Visible);
 }

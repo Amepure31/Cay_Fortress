@@ -8,8 +8,47 @@
 #include "Inventory/FInventoryItemInstance.h"
 #include "Input/Reply.h"
 #include "SlateBasics.h"
+#include "Components/OverlaySlot.h"
+#include "Components/TextBlock.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/DragDropOperation.h"
+
+namespace
+{
+static constexpr float MinItemCellPixelSize = 64.0f;
+
+static UWidget* CreateConstrainedDragVisual(
+	UObject* Outer,
+	UUI_ItemWidget* DragVisual,
+	const UUI_Inventory* InventoryWidget,
+	int32 FootprintWidth,
+	int32 FootprintHeight)
+{
+	if (!DragVisual || !Outer)
+	{
+		return DragVisual;
+	}
+
+	float CellPixelSize = MinItemCellPixelSize;
+	if (InventoryWidget)
+	{
+		CellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
+	}
+
+	USizeBox* DragHostSizeBox = NewObject<USizeBox>(Outer);
+	if (!DragHostSizeBox)
+	{
+		return DragVisual;
+	}
+
+	DragHostSizeBox->SetWidthOverride(static_cast<float>(FMath::Max(1, FootprintWidth)) * CellPixelSize);
+	DragHostSizeBox->SetHeightOverride(static_cast<float>(FMath::Max(1, FootprintHeight)) * CellPixelSize);
+	DragHostSizeBox->AddChild(DragVisual);
+	return DragHostSizeBox;
+}
+}
 
 void UUI_ItemSlot::NativeConstruct()
 {
@@ -99,8 +138,8 @@ void UUI_ItemSlot::NativeOnDragDetected(const FGeometry& InGeometry, const FPoin
 		{
 			return;
 		}
-		SourceItemWidget->SetItemInstance(BoundItem);
 		SourceItemWidget->SetOwningInventory(OwningInventory);
+		SourceItemWidget->SetItemInstance(BoundItem);
 	}
 
 	const int32 ItemWidth = FMath::Max(1, BoundItem->Width);
@@ -120,6 +159,7 @@ void UUI_ItemSlot::NativeOnDragDetected(const FGeometry& InGeometry, const FPoin
 	}
 
 	SourceItemWidget->SetDragGrabCell(GrabCellX, GrabCellY);
+	SourceItemWidget->BeginDragSession();
 
 	UDragDropOperation* DragOperation = NewObject<UDragDropOperation>(this);
 	if (!DragOperation)
@@ -128,18 +168,28 @@ void UUI_ItemSlot::NativeOnDragDetected(const FGeometry& InGeometry, const FPoin
 	}
 
 	UUI_ItemWidget* DragVisual = CreateWidget<UUI_ItemWidget>(GetWorld(), SourceItemWidget->GetClass());
+	UWidget* DragVisualHost = DragVisual;
 	if (DragVisual)
 	{
-		DragVisual->SetItemInstance(BoundItem);
 		DragVisual->SetOwningInventory(OwningInventory);
+		DragVisual->SetItemInstance(BoundItem);
 		DragVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+		SourceItemWidget->SetActiveDragVisual(DragVisual);
+		DragVisualHost = CreateConstrainedDragVisual(
+			this,
+			DragVisual,
+			OwningInventory,
+			SourceItemWidget->GetCurrentDragWidth(),
+			SourceItemWidget->GetCurrentDragHeight()
+		);
+		SourceItemWidget->SetActiveDragVisualHost(Cast<USizeBox>(DragVisualHost));
 	}
 
 	DragOperation->Payload = SourceItemWidget;
-	DragOperation->DefaultDragVisual = DragVisual;
-	DragOperation->Pivot = EDragPivot::MouseDown;
+	DragOperation->DefaultDragVisual = DragVisualHost;
+	SourceItemWidget->SetActiveDragOperation(DragOperation);
 	OutOperation = DragOperation;
-	SourceItemWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	SourceItemWidget->SetVisibility(ESlateVisibility::Hidden);
 	if (OwningInventory)
 	{
 		OwningInventory->SetDraggedItemWidget(SourceItemWidget);
@@ -168,7 +218,7 @@ bool UUI_ItemSlot::NativeOnDragOver(const FGeometry& InGeometry, const FDragDrop
 
 		const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
 		const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
-		OwningInventory->UpdatePlacementPreview(ItemInstance, TargetOriginX, TargetOriginY);
+		OwningInventory->UpdatePlacementPreview(SourceItemWidget, TargetOriginX, TargetOriginY);
 		return true;
 	}
 
@@ -224,7 +274,7 @@ bool UUI_ItemSlot::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEven
 
 		const int32 TargetOriginX = HoveredSlot->GetGridX() - SourceItemWidget->GetDragGrabCellX();
 		const int32 TargetOriginY = HoveredSlot->GetGridY() - SourceItemWidget->GetDragGrabCellY();
-		const bool bPlaced = OwningInventory->TryPlaceDraggedItem(ItemInstance, TargetOriginX, TargetOriginY);
+		const bool bPlaced = OwningInventory->TryPlaceDraggedItem(SourceItemWidget, TargetOriginX, TargetOriginY);
 		OwningInventory->SetDraggedItemWidget(nullptr);
 		return bPlaced;
 	}
@@ -412,11 +462,14 @@ void UUI_ItemSlot::BindItem(UInventoryItemInstance* InItemInstance)
 			{
 				NewItemWidget->SetVisibility(ESlateVisibility::Visible);
 				NewItemWidget->SetIsEnabled(true);
-				NewItemWidget->SetItemInstance(InItemInstance);
 				NewItemWidget->SetOwningInventory(OwningInventory);
+				NewItemWidget->SetItemInstance(InItemInstance);
 				const FVector2D SlotSize = GetCachedGeometry().GetLocalSize();
-				const float BaseWidth = SlotSize.X > 1.0f ? SlotSize.X : 64.0f;
-				const float BaseHeight = SlotSize.Y > 1.0f ? SlotSize.Y : 64.0f;
+				const float FallbackSlotSize = OwningInventory
+					? static_cast<float>(OwningInventory->GetEffectiveSlotSize())
+					: 64.0f;
+				const float BaseWidth = SlotSize.X > 1.0f ? SlotSize.X : FallbackSlotSize;
+				const float BaseHeight = SlotSize.Y > 1.0f ? SlotSize.Y : FallbackSlotSize;
 				const float WidgetWidth = BaseWidth * FMath::Max(1, InItemInstance->Width);
 				const float WidgetHeight = BaseHeight * FMath::Max(1, InItemInstance->Height);
 
@@ -425,12 +478,81 @@ void UUI_ItemSlot::BindItem(UInventoryItemInstance* InItemInstance)
 				{
 					ItemSizeBox->SetWidthOverride(WidgetWidth);
 					ItemSizeBox->SetHeightOverride(WidgetHeight);
-					ItemSizeBox->AddChild(NewItemWidget);
-					ItemContainer->AddChildToOverlay(ItemSizeBox);
+
+					UCanvasPanel* ItemVisualCanvas = NewObject<UCanvasPanel>(this);
+					if (ItemVisualCanvas)
+					{
+						if (UCanvasPanelSlot* ItemWidgetCanvasSlot = ItemVisualCanvas->AddChildToCanvas(NewItemWidget))
+						{
+							// Keep widget bounds locked to the occupied footprint size.
+							// This prevents 90-degree rotated visuals from expanding outside the grid area.
+							ItemWidgetCanvasSlot->SetAutoSize(false);
+							ItemWidgetCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+							ItemWidgetCanvasSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+							ItemWidgetCanvasSlot->SetPosition(FVector2D::ZeroVector);
+							ItemWidgetCanvasSlot->SetSize(FVector2D(WidgetWidth, WidgetHeight));
+						}
+
+						// For placed items, draw stack count on the runtime item canvas.
+						// The canvas lives inside ItemSizeBox, so bottom-right stays inside item bounds.
+						if (InItemInstance->StackSize > 1)
+						{
+							UTextBlock* SourceStackText = NewItemWidget->StackSizeText;
+							if (SourceStackText)
+							{
+								SourceStackText->SetVisibility(ESlateVisibility::Hidden);
+							}
+
+							UTextBlock* RuntimeStackText = NewObject<UTextBlock>(this);
+							if (RuntimeStackText)
+							{
+								RuntimeStackText->SetText(FText::AsNumber(InItemInstance->StackSize));
+								RuntimeStackText->SetJustification(ETextJustify::Right);
+
+								if (SourceStackText)
+								{
+									RuntimeStackText->SetFont(SourceStackText->GetFont());
+									RuntimeStackText->SetColorAndOpacity(SourceStackText->GetColorAndOpacity());
+									RuntimeStackText->SetShadowOffset(SourceStackText->GetShadowOffset());
+									RuntimeStackText->SetShadowColorAndOpacity(SourceStackText->GetShadowColorAndOpacity());
+								}
+								else
+								{
+									RuntimeStackText->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+								}
+
+								if (UCanvasPanelSlot* StackCanvasSlot = ItemVisualCanvas->AddChildToCanvas(RuntimeStackText))
+								{
+									StackCanvasSlot->SetAutoSize(true);
+									StackCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+									StackCanvasSlot->SetAlignment(FVector2D(1.0f, 1.0f));
+									StackCanvasSlot->SetPosition(FVector2D(WidgetWidth - 4.0f, WidgetHeight - 4.0f));
+								}
+							}
+						}
+
+						ItemSizeBox->AddChild(ItemVisualCanvas);
+					}
+					else
+					{
+						ItemSizeBox->AddChild(NewItemWidget);
+					}
+
+					if (UOverlaySlot* OverlaySlot = ItemContainer->AddChildToOverlay(ItemSizeBox))
+					{
+						OverlaySlot->SetHorizontalAlignment(HAlign_Left);
+						OverlaySlot->SetVerticalAlignment(VAlign_Top);
+						OverlaySlot->SetPadding(FMargin(0.0f));
+					}
 				}
 				else
 				{
-					ItemContainer->AddChildToOverlay(NewItemWidget);
+					if (UOverlaySlot* OverlaySlot = ItemContainer->AddChildToOverlay(NewItemWidget))
+					{
+						OverlaySlot->SetHorizontalAlignment(HAlign_Left);
+						OverlaySlot->SetVerticalAlignment(VAlign_Top);
+						OverlaySlot->SetPadding(FMargin(0.0f));
+					}
 				}
 
 				ItemWidgetInstance = NewItemWidget;

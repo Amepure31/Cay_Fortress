@@ -140,6 +140,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItem(class UInventoryItemInstance* ItemInstance, int32 NewSlotX, int32 NewSlotY);
 
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool MoveItemWithShape(
+		class UInventoryItemInstance* ItemInstance,
+		int32 NewSlotX,
+		int32 NewSlotY,
+		int32 NewWidth,
+		int32 NewHeight,
+		const FFItemShapeMask& NewShapeMask,
+		int32 NewRotationQuarterTurns);
+
 	/**
 	 * 检查指定位置是否可以放置物品
 	 * @param Width 物品宽度
