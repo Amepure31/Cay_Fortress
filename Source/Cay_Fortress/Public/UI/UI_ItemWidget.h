@@ -14,6 +14,7 @@ class UTextBlock;
 class UDragDropOperation;
 class UUI_Inventory;
 class USizeBox;
+class UPanelWidget;
 
 UCLASS()
 class CAY_FORTRESS_API UUI_ItemWidget : public UUserWidget
@@ -63,9 +64,14 @@ public:
 	void SetActiveDragVisual(UUI_ItemWidget* InDragVisual);
 	void SetActiveDragVisualHost(USizeBox* InDragVisualHost);
 	void SetActiveDragOperation(UDragDropOperation* InDragOperation);
+	void HideSourceVisualRootForDrag();
+	void RestoreSourceVisualRootAfterDrag();
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SetOwningInventory(UUI_Inventory* InOwningInventory) { OwningInventory = InOwningInventory; }
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	UUI_Inventory* GetOwningInventory() const { return OwningInventory.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	virtual void OnDraggedOver(UUI_ItemSlot* TargetSlot, bool bCanPlace);
@@ -95,7 +101,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
 	UImage* ItemIcon;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
 	UTextBlock* StackSizeText;
 
 private:
@@ -141,4 +147,7 @@ private:
 	void UpdateDragOperationAnchor();
 	void ApplyVisualDimensions(int32 InWidth, int32 InHeight);
 	void SetDragFootprintInternal(int32 InWidth, int32 InHeight, const FFItemShapeMask& InMask, int32 InRotationQuarterTurns);
+
+	UPROPERTY()
+	TObjectPtr<UPanelWidget> SourceVisualRootBeforeDrag;
 };

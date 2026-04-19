@@ -2,6 +2,7 @@
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
 #include "Inventory/InventoryItemRarity.h"
+#include "Inventory/InventoryItemType.h"
 
 void UUI_ItemTooltip::NativeConstruct()
 {
@@ -30,14 +31,30 @@ void UUI_ItemTooltip::SetItem(UInventoryItemInstance* InItemInstance)
 
 		if (DurabilityBar)
 		{
-			if (InItemInstance->MaxDurability > 1)
+			if (InItemInstance->MaxDurability > 0)
 			{
 				DurabilityBar->SetVisibility(ESlateVisibility::Visible);
-				DurabilityBar->SetPercent(static_cast<float>(InItemInstance->Durability) / InItemInstance->MaxDurability);
+				const float Percent = static_cast<float>(InItemInstance->Durability) / static_cast<float>(InItemInstance->MaxDurability);
+				DurabilityBar->SetPercent(FMath::Clamp(Percent, 0.0f, 1.0f));
 			}
 			else
 			{
 				DurabilityBar->SetVisibility(ESlateVisibility::Hidden);
+			}
+		}
+		if (DurabilityText)
+		{
+			if (InItemInstance->MaxDurability > 0)
+			{
+				DurabilityText->SetVisibility(ESlateVisibility::Visible);
+				DurabilityText->SetText(FText::Format(
+					FText::FromString(TEXT("{0}/{1}")),
+					FText::AsNumber(InItemInstance->Durability),
+					FText::AsNumber(InItemInstance->MaxDurability)));
+			}
+			else
+			{
+				DurabilityText->SetVisibility(ESlateVisibility::Hidden);
 			}
 		}
 
@@ -51,6 +68,29 @@ void UUI_ItemTooltip::SetItem(UInventoryItemInstance* InItemInstance)
 			else
 			{
 				StackSizeText->SetVisibility(ESlateVisibility::Hidden);
+			}
+		}
+
+		if (TypeSpecificText)
+		{
+			FString DetailLine = FString::Printf(TEXT("重量: %.2f  价值: %d"), ItemData.Weight, ItemData.Value);
+			if (ItemData.ItemType == EInventoryItemType::Ammo)
+			{
+				const FString AmmoLine = FString::Printf(
+					TEXT("子弹类型: %s"),
+					*StaticEnum<EAmmoType>()->GetDisplayNameTextByValue(static_cast<int64>(ItemData.AmmoStats.AmmoType)).ToString());
+				DetailLine += TEXT("\n");
+				DetailLine += AmmoLine;
+			}
+
+			if (DetailLine.IsEmpty())
+			{
+				TypeSpecificText->SetVisibility(ESlateVisibility::Collapsed);
+			}
+			else
+			{
+				TypeSpecificText->SetText(FText::FromString(DetailLine));
+				TypeSpecificText->SetVisibility(ESlateVisibility::Visible);
 			}
 		}
 

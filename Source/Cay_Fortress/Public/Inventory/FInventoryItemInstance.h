@@ -70,8 +70,8 @@ public:
 	UInventoryItemInstance()
 		: ItemData(nullptr)
 		, StackSize(1)
-		, Durability(100)
-		, MaxDurability(100)
+		, Durability(0)
+		, MaxDurability(0)
 		, SlotX(-1)
 		, SlotY(-1)
 		, Width(1)
@@ -96,8 +96,17 @@ public:
 			Height = InItemData->ItemData.Height;
 			ShapeMask.Init(Width, Height, InItemData->ItemData.ShapeMaskData);
 			RotationQuarterTurns = 0;
-			MaxDurability = InItemData->ItemData.bCanStack ? 1 : 100;
-			Durability = MaxDurability;
+
+			if (InItemData->ItemData.bUseDurability)
+			{
+				MaxDurability = FMath::Max(1, InItemData->ItemData.MaxDurability);
+				Durability = MaxDurability;
+			}
+			else
+			{
+				MaxDurability = 0;
+				Durability = 0;
+			}
 		}
 	}
 };

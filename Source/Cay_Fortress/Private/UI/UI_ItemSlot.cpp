@@ -189,6 +189,7 @@ void UUI_ItemSlot::NativeOnDragDetected(const FGeometry& InGeometry, const FPoin
 	DragOperation->DefaultDragVisual = DragVisualHost;
 	SourceItemWidget->SetActiveDragOperation(DragOperation);
 	OutOperation = DragOperation;
+	SourceItemWidget->HideSourceVisualRootForDrag();
 	SourceItemWidget->SetVisibility(ESlateVisibility::Hidden);
 	if (OwningInventory)
 	{
@@ -286,9 +287,16 @@ void UUI_ItemSlot::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointe
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
 
-	if (BoundItem && OwningInventory)
+	UInventoryItemInstance* HoverItem = BoundItem;
+	if (!HoverItem && OwningInventory && OwningInventory->GetBoundInventory())
 	{
-		OwningInventory->SetItemHoverPreview(BoundItem);
+		// Non-origin occupied cells don't bind item widget; resolve by grid position.
+		HoverItem = OwningInventory->GetBoundInventory()->GetItemAtPosition(GridX, GridY);
+	}
+
+	if (HoverItem && OwningInventory)
+	{
+		OwningInventory->SetItemHoverPreview(HoverItem);
 	}
 	else
 	{
@@ -302,9 +310,15 @@ void UUI_ItemSlot::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
 
-	if (BoundItem && OwningInventory)
+	UInventoryItemInstance* HoverItem = BoundItem;
+	if (!HoverItem && OwningInventory && OwningInventory->GetBoundInventory())
 	{
-		OwningInventory->ClearItemHoverPreview(BoundItem);
+		HoverItem = OwningInventory->GetBoundInventory()->GetItemAtPosition(GridX, GridY);
+	}
+
+	if (HoverItem && OwningInventory)
+	{
+		OwningInventory->ClearItemHoverPreview(HoverItem);
 	}
 	else
 	{
@@ -448,7 +462,13 @@ void UUI_ItemSlot::BindItem(UInventoryItemInstance* InItemInstance)
 
 	if (InItemInstance && InItemInstance->ItemData)
 	{
-		SetOccupied(true, InItemInstance->ItemData->ItemData.Rarity);
+		const bool bOriginOccupied =
+			(InItemInstance->ShapeMask.Width <= 0 || InItemInstance->ShapeMask.Height <= 0) ||
+			InItemInstance->ShapeMask.IsOccupied(0, 0);
+		if (bOriginOccupied)
+		{
+			SetOccupied(true, InItemInstance->ItemData->ItemData.Rarity);
+		}
 
 		if (ItemContainer)
 		{

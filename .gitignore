@@ -7,6 +7,9 @@ Saved/
 Script/
 Plugins/
 
+# 忽略 Uniblocks 文件夹
+/Content/Uniblocks/
+
 # Visual Studio 生成文件
 .vs/
 *.sln

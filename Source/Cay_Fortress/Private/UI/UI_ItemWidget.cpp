@@ -19,9 +19,9 @@
 
 namespace
 {
-static constexpr float MinItemCellPixelSize = 64.0f;
+static constexpr float ItemWidgetMinCellPixelSize = 64.0f;
 
-static UWidget* CreateConstrainedDragVisual(
+static UWidget* CreateItemWidgetConstrainedDragVisual(
 	UObject* Outer,
 	UUI_ItemWidget* DragVisual,
 	const UUI_Inventory* InventoryWidget,
@@ -33,7 +33,7 @@ static UWidget* CreateConstrainedDragVisual(
 		return DragVisual;
 	}
 
-	float CellPixelSize = MinItemCellPixelSize;
+	float CellPixelSize = ItemWidgetMinCellPixelSize;
 	if (InventoryWidget)
 	{
 		CellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
@@ -225,6 +225,7 @@ void UUI_ItemWidget::BeginDragSession()
 	}
 
 	bDragSessionActive = true;
+	SourceVisualRootBeforeDrag = nullptr;
 	DragRotationQuarterTurns = ((BoundItem->RotationQuarterTurns % 4) + 4) % 4;
 	DragFootprintWidth = FMath::Max(1, BoundItem->Width);
 	DragFootprintHeight = FMath::Max(1, BoundItem->Height);
@@ -238,6 +239,7 @@ void UUI_ItemWidget::EndDragSession()
 	ActiveDragVisual = nullptr;
 	ActiveDragVisualHost = nullptr;
 	ActiveDragOperation = nullptr;
+	RestoreSourceVisualRootAfterDrag();
 
 	if (BoundItem)
 	{
@@ -267,14 +269,16 @@ void UUI_ItemWidget::RotateDragFootprintClockwise()
 	DragGrabCellX = FMath::Clamp(DragGrabCellX, 0, FMath::Max(0, DragFootprintWidth - 1));
 	DragGrabCellY = FMath::Clamp(DragGrabCellY, 0, FMath::Max(0, DragFootprintHeight - 1));
 
+	// Refresh drag host and anchor first, so Slate doesn't render one frame with stale geometry.
+	UpdateActiveDragVisualHostSize();
+	UpdateDragOperationAnchor();
+
 	ApplyVisualDimensions(DragFootprintWidth, DragFootprintHeight);
 
 	if (ActiveDragVisual && ActiveDragVisual != this)
 	{
 		ActiveDragVisual->SetDragFootprintInternal(DragFootprintWidth, DragFootprintHeight, DragFootprintMask, DragRotationQuarterTurns);
 	}
-	UpdateActiveDragVisualHostSize();
-	UpdateDragOperationAnchor();
 }
 
 int32 UUI_ItemWidget::GetCurrentDragWidth() const
@@ -324,7 +328,7 @@ void UUI_ItemWidget::UpdateActiveDragVisualHostSize()
 		return;
 	}
 
-	float CellPixelSize = MinItemCellPixelSize;
+	float CellPixelSize = ItemWidgetMinCellPixelSize;
 	if (const UUI_Inventory* InventoryWidget = OwningInventory.Get())
 	{
 		CellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
@@ -354,6 +358,24 @@ void UUI_ItemWidget::UpdateDragOperationAnchor()
 	ActiveDragOperation->Offset = FVector2D(-RelativeX, -RelativeY);
 }
 
+void UUI_ItemWidget::HideSourceVisualRootForDrag()
+{
+	if (UPanelWidget* ParentPanel = GetParent())
+	{
+		SourceVisualRootBeforeDrag = ParentPanel;
+		SourceVisualRootBeforeDrag->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UUI_ItemWidget::RestoreSourceVisualRootAfterDrag()
+{
+	if (SourceVisualRootBeforeDrag)
+	{
+		SourceVisualRootBeforeDrag->SetVisibility(ESlateVisibility::Visible);
+		SourceVisualRootBeforeDrag = nullptr;
+	}
+}
+
 void UUI_ItemWidget::ApplyVisualDimensions(int32 InWidth, int32 InHeight)
 {
 	if (!ItemIcon)
@@ -368,7 +390,7 @@ void UUI_ItemWidget::ApplyVisualDimensions(int32 InWidth, int32 InHeight)
 	const float RenderWidthCells = bOddQuarterTurn ? FootprintHeightCells : FootprintWidthCells;
 	const float RenderHeightCells = bOddQuarterTurn ? FootprintWidthCells : FootprintHeightCells;
 
-	float BaseCellPixelSize = MinItemCellPixelSize;
+	float BaseCellPixelSize = ItemWidgetMinCellPixelSize;
 	if (const UUI_Inventory* InventoryWidget = OwningInventory.Get())
 	{
 		BaseCellPixelSize = static_cast<float>(InventoryWidget->GetEffectiveSlotSize());
@@ -558,7 +580,7 @@ void UUI_ItemWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPo
 		DragVisual->SetItemInstance(BoundItem);
 		DragVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
 		SetActiveDragVisual(DragVisual);
-		DragVisualHost = CreateConstrainedDragVisual(
+		DragVisualHost = CreateItemWidgetConstrainedDragVisual(
 			this,
 			DragVisual,
 			OwningInventory.Get(),
@@ -572,6 +594,7 @@ void UUI_ItemWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPo
 	DragOperation->DefaultDragVisual = DragVisualHost;
 	SetActiveDragOperation(DragOperation);
 	OutOperation = DragOperation;
+	HideSourceVisualRootForDrag();
 	SetVisibility(ESlateVisibility::Hidden);
 	if (UUI_Inventory* InventoryWidget = OwningInventory.Get())
 	{
@@ -607,8 +630,8 @@ void UUI_ItemWidget::UpdateHoverPreviewByPointer(const FVector2D& ScreenPosition
 	int32 CellX = INDEX_NONE;
 	int32 CellY = INDEX_NONE;
 	const bool bResolved = ResolveMaskCellFromScreenPosition(ScreenPosition, CellX, CellY);
-	const bool bInteractable = bResolved && IsMaskCellInteractable(CellX, CellY);
-	if (bInteractable)
+	// Tooltip should appear across the full draggable footprint area.
+	if (bResolved)
 	{
 		InventoryWidget->SetItemHoverPreview(BoundItem);
 	}

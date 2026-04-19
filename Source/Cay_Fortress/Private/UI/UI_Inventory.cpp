@@ -18,6 +18,7 @@
 #include "Engine/Blueprint.h"
 #include "Misc/PackageName.h"
 #include "Blueprint/DragDropOperation.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 
 namespace
 {
@@ -40,6 +41,34 @@ static TSubclassOf<UUI_ItemWidget> ResolveDefaultItemWidgetClass()
 		return nullptr;
 	}
 
+	// Prefer the shared generic widget (WB_UI_Item) first.
+	for (const FAssetData& AssetData : AssetDataList)
+	{
+		if (AssetData.AssetName != TEXT("WB_UI_Item"))
+		{
+			continue;
+		}
+
+		FString GeneratedClassPath;
+		if (!AssetData.GetTagValue(TEXT("GeneratedClass"), GeneratedClassPath))
+		{
+			continue;
+		}
+
+		const FString ClassObjectPath = FPackageName::ExportTextPathToObjectPath(GeneratedClassPath);
+		if (ClassObjectPath.IsEmpty())
+		{
+			continue;
+		}
+
+		UClass* LoadedClass = LoadObject<UClass>(nullptr, *ClassObjectPath);
+		if (LoadedClass && LoadedClass->IsChildOf(UUI_ItemWidget::StaticClass()))
+		{
+			return LoadedClass;
+		}
+	}
+
+	// Fallback: any child class in folder.
 	for (const FAssetData& AssetData : AssetDataList)
 	{
 		FString GeneratedClassPath;
@@ -61,6 +90,42 @@ static TSubclassOf<UUI_ItemWidget> ResolveDefaultItemWidgetClass()
 		}
 
 		if (LoadedClass->IsChildOf(UUI_ItemWidget::StaticClass()))
+		{
+			return LoadedClass;
+		}
+	}
+
+	return nullptr;
+}
+
+static TSubclassOf<UUI_ItemTooltip> ResolveDefaultTooltipClass()
+{
+	static const FName TooltipFolderPath(TEXT("/Game/UI/WB_UI_ItemTooltip"));
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+
+	TArray<FAssetData> AssetDataList;
+	AssetRegistryModule.Get().GetAssetsByPath(TooltipFolderPath, AssetDataList, true);
+	if (AssetDataList.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	for (const FAssetData& AssetData : AssetDataList)
+	{
+		FString GeneratedClassPath;
+		if (!AssetData.GetTagValue(TEXT("GeneratedClass"), GeneratedClassPath))
+		{
+			continue;
+		}
+
+		const FString ClassObjectPath = FPackageName::ExportTextPathToObjectPath(GeneratedClassPath);
+		if (ClassObjectPath.IsEmpty())
+		{
+			continue;
+		}
+
+		UClass* LoadedClass = LoadObject<UClass>(nullptr, *ClassObjectPath);
+		if (LoadedClass && LoadedClass->IsChildOf(UUI_ItemTooltip::StaticClass()))
 		{
 			return LoadedClass;
 		}
@@ -115,6 +180,10 @@ void UUI_Inventory::NativeConstruct()
 	if (!ItemWidgetClass)
 	{
 		ItemWidgetClass = ResolveDefaultItemWidgetClass();
+	}
+	if (!TooltipClass)
+	{
+		TooltipClass = ResolveDefaultTooltipClass();
 	}
 
 	if (ItemWidgetClass)
@@ -193,29 +262,35 @@ void UUI_Inventory::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	if (!DraggedItemWidget)
+	if (DraggedItemWidget)
 	{
+		// Dragging phase only renders placement preview, tooltip is suppressed.
+		HideTooltip();
+		ClearItemHoverPreview();
+
+		if (!DraggedItemWidget->GetItemInstance())
+		{
+			SetDraggedItemWidget(nullptr);
+			ClearPlacementPreview();
+			return;
+		}
+
+		const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+		UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos);
+		if (!HoveredSlot)
+		{
+			ClearPlacementPreview();
+			return;
+		}
+
+		const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
+		const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
+		UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
 		return;
 	}
 
-	if (!DraggedItemWidget->GetItemInstance())
-	{
-		SetDraggedItemWidget(nullptr);
-		ClearPlacementPreview();
-		return;
-	}
-
-	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
-	UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos);
-	if (!HoveredSlot)
-	{
-		ClearPlacementPreview();
-		return;
-	}
-
-	const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
-	const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
-	UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
+	// Non-drag phase uses cursor-based hit test every tick for reliable hover.
+	UpdateHoverStateFromCursor();
 }
 
 bool UUI_Inventory::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
@@ -295,6 +370,7 @@ void UUI_Inventory::NativeDestruct()
 void UUI_Inventory::BindInventory(UInventoryComponent* InInventory)
 {
 	BoundInventory = InInventory;
+	bHasLastHoverCursorPosition = false;
 	
 	if (BoundInventory)
 	{
@@ -355,10 +431,6 @@ void UUI_Inventory::UpdateInventory()
 				if (OriginIndex >= 0 && OriginIndex < ItemSlots.Num())
 				{
 					ItemSlots[OriginIndex]->BindItem(Item);
-					if (!bOriginOccupied)
-					{
-						ItemSlots[OriginIndex]->SetOccupied(false);
-					}
 				}
 			}
 
@@ -493,27 +565,18 @@ void UUI_Inventory::UpdateSlotCanPlacePreviews(UUI_ItemWidget* ItemWidget)
 
 void UUI_Inventory::ShowTooltip(UUI_ItemSlot* GridSlot)
 {
-	if (!GridSlot || !TooltipClass)
+	if (!GridSlot)
 	{
 		return;
 	}
 
-	UInventoryItemInstance* Item = GridSlot->GetBoundItem();
-	if (!Item)
+	UInventoryItemInstance* ItemToShow = GridSlot->GetBoundItem();
+	if (!ItemToShow && BoundInventory)
 	{
-		HideTooltip();
-		return;
+		ItemToShow = BoundInventory->GetItemAtPosition(GridSlot->GetGridX(), GridSlot->GetGridY());
 	}
 
-	if (!ActiveTooltip)
-	{
-		ActiveTooltip = CreateWidget<UUI_ItemTooltip>(GetWorld(), TooltipClass);
-	}
-
-	if (ActiveTooltip)
-	{
-		ActiveTooltip->SetItem(Item);
-	}
+	ShowTooltipForItem(ItemToShow);
 }
 
 void UUI_Inventory::HideTooltip()
@@ -522,6 +585,23 @@ void UUI_Inventory::HideTooltip()
 	{
 		ActiveTooltip->HideTooltip();
 	}
+}
+
+void UUI_Inventory::UpdateTooltipPosition()
+{
+	if (!ActiveTooltip)
+	{
+		return;
+	}
+
+	FVector2D MousePosition = FVector2D::ZeroVector;
+	if (!UWidgetLayoutLibrary::GetMousePositionScaledByDPI(GetOwningPlayer(), MousePosition.X, MousePosition.Y))
+	{
+		return;
+	}
+
+	MousePosition += FVector2D(20.0f, 20.0f);
+	ActiveTooltip->SetPositionInViewport(MousePosition, false);
 }
 
 void UUI_Inventory::SetDraggedItemWidget(UUI_ItemWidget* InWidget)
@@ -681,11 +761,13 @@ void UUI_Inventory::SetItemHoverPreview(UInventoryItemInstance* ItemInstance)
 
 	if (HoveredItemInstance == ItemInstance)
 	{
+		UpdateTooltipPosition();
 		return;
 	}
 
 	ClearItemHoverPreview();
 	HoveredItemInstance = ItemInstance;
+	ShowTooltipForItem(ItemInstance);
 
 	const int32 Width = FMath::Max(1, ItemInstance->Width);
 	const int32 Height = FMath::Max(1, ItemInstance->Height);
@@ -730,6 +812,90 @@ void UUI_Inventory::ClearItemHoverPreview(UInventoryItemInstance* ItemInstance)
 	}
 
 	HoveredItemInstance = nullptr;
+	HideTooltip();
+}
+
+void UUI_Inventory::ShowTooltipForItem(UInventoryItemInstance* ItemInstance)
+{
+	if (!ItemInstance)
+	{
+		HideTooltip();
+		return;
+	}
+
+	if (!TooltipClass)
+	{
+		TooltipClass = ResolveDefaultTooltipClass();
+	}
+
+	if (!TooltipClass)
+	{
+		return;
+	}
+
+	if (!ActiveTooltip)
+	{
+		ActiveTooltip = CreateWidget<UUI_ItemTooltip>(GetWorld(), TooltipClass);
+		if (ActiveTooltip)
+		{
+			ActiveTooltip->AddToViewport(1000);
+		}
+	}
+
+	if (ActiveTooltip)
+	{
+		ActiveTooltip->SetItem(ItemInstance);
+		UpdateTooltipPosition();
+	}
+}
+
+void UUI_Inventory::UpdateHoverStateFromCursor()
+{
+	if (!BoundInventory)
+	{
+		ClearItemHoverPreview();
+		HideTooltip();
+		bHasLastHoverCursorPosition = false;
+		return;
+	}
+
+	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+	if (bHasLastHoverCursorPosition && CursorPos.Equals(LastHoverCursorPosition, 0.1f))
+	{
+		if (ActiveTooltip && ActiveTooltip->GetVisibility() == ESlateVisibility::Visible)
+		{
+			UpdateTooltipPosition();
+		}
+		return;
+	}
+
+	LastHoverCursorPosition = CursorPos;
+	bHasLastHoverCursorPosition = true;
+
+	UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos);
+	if (!HoveredSlot)
+	{
+		ClearItemHoverPreview();
+		HideTooltip();
+		return;
+	}
+
+	UInventoryItemInstance* HoveredItem = HoveredSlot->GetBoundItem();
+	if (!HoveredItem)
+	{
+		HoveredItem = BoundInventory->GetItemAtPosition(HoveredSlot->GetGridX(), HoveredSlot->GetGridY());
+	}
+
+	if (!HoveredItem)
+	{
+		ClearItemHoverPreview();
+		HideTooltip();
+		return;
+	}
+
+	SetItemHoverPreview(HoveredItem);
+	ShowTooltipForItem(HoveredItem);
+	UpdateTooltipPosition();
 }
 
 bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 OriginSlotX, int32 OriginSlotY)
@@ -751,6 +917,86 @@ bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 Origin
 	const int32 NewHeight = FMath::Max(1, ItemWidget->GetCurrentDragHeight());
 	const FFItemShapeMask& NewShapeMask = ItemWidget->GetCurrentDragShapeMask();
 	const int32 NewRotationQuarterTurns = ItemWidget->GetCurrentDragRotationQuarterTurns();
+
+	UUI_Inventory* const SourceInventoryWidget = ItemWidget->GetOwningInventory();
+	UInventoryComponent* const SourceInventory = SourceInventoryWidget ? SourceInventoryWidget->GetBoundInventory() : nullptr;
+
+	// Cross-inventory transfer: remove from source inventory, add to target inventory, then apply drag footprint.
+	if (SourceInventory && SourceInventory != BoundInventory)
+	{
+		if (!BoundInventory->IsSpaceAvailable(NewWidth, NewHeight, NewShapeMask, OriginSlotX, OriginSlotY))
+		{
+			ClearPlacementPreview();
+			if (SourceInventoryWidget)
+			{
+				SourceInventoryWidget->ClearPlacementPreview();
+				SourceInventoryWidget->UpdateInventory();
+			}
+			UpdateInventory();
+			return false;
+		}
+
+		if (!ItemInstance->ItemData)
+		{
+			ClearPlacementPreview();
+			return false;
+		}
+
+		const TObjectPtr<UInventoryItemDataAsset> ItemDataAsset = ItemInstance->ItemData;
+		const int32 StackSize = FMath::Max(1, ItemInstance->StackSize);
+		const int32 SourceSlotX = ItemInstance->SlotX;
+		const int32 SourceSlotY = ItemInstance->SlotY;
+
+		if (!SourceInventory->RemoveItem(ItemInstance))
+		{
+			ClearPlacementPreview();
+			return false;
+		}
+
+		if (!BoundInventory->AddItemAtPosition(ItemDataAsset, OriginSlotX, OriginSlotY, StackSize))
+		{
+			const bool bRestoredAtOriginal = SourceInventory->AddItemAtPosition(ItemDataAsset, SourceSlotX, SourceSlotY, StackSize);
+			if (!bRestoredAtOriginal)
+			{
+				SourceInventory->AddItem(ItemDataAsset, StackSize);
+			}
+
+			ClearPlacementPreview();
+			if (SourceInventoryWidget)
+			{
+				SourceInventoryWidget->ClearPlacementPreview();
+				SourceInventoryWidget->SetDraggedItemWidget(nullptr);
+				SourceInventoryWidget->UpdateInventory();
+			}
+			UpdateInventory();
+			return false;
+		}
+
+		UInventoryItemInstance* AddedItem = BoundInventory->GetItemAtPosition(OriginSlotX, OriginSlotY);
+		if (AddedItem)
+		{
+			BoundInventory->MoveItemWithShape(
+				AddedItem,
+				OriginSlotX,
+				OriginSlotY,
+				NewWidth,
+				NewHeight,
+				NewShapeMask,
+				NewRotationQuarterTurns
+			);
+		}
+
+		ItemWidget->SetOwningInventory(this);
+		ClearPlacementPreview();
+		if (SourceInventoryWidget)
+		{
+			SourceInventoryWidget->ClearPlacementPreview();
+			SourceInventoryWidget->SetDraggedItemWidget(nullptr);
+			SourceInventoryWidget->UpdateInventory();
+		}
+		UpdateInventory();
+		return true;
+	}
 
 	const bool bMoved = BoundInventory->MoveItemWithShape(
 		ItemInstance,

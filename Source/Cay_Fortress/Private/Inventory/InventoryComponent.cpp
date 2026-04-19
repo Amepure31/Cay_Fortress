@@ -1,4 +1,4 @@
-#include "Inventory/InventoryComponent.h"
+ #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItemDataAsset.h"
 #include "Inventory/FInventoryItemInstance.h"
 #include "Inventory/FInventoryGridCell.h"

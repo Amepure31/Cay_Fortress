@@ -131,6 +131,8 @@ protected:
 
 private:
 	void SuppressDraggedItemSlotVisuals(class UInventoryItemInstance* ItemInstance);
+	void ShowTooltipForItem(class UInventoryItemInstance* ItemInstance);
+	void UpdateHoverStateFromCursor();
 
 	UPROPERTY()
 	UInventoryComponent* BoundInventory;
@@ -150,12 +152,19 @@ private:
 	UPROPERTY()
 	TObjectPtr<class UInventoryItemInstance> HoveredItemInstance;
 
+	UPROPERTY(Transient)
+	FVector2D LastHoverCursorPosition;
+
+	UPROPERTY(Transient)
+	bool bHasLastHoverCursorPosition = false;
+
 protected:
 	void CreateGrid();
 	void SetSlotSize();
 	void OnItemSlotClickedInternal(UUI_ItemSlot* Slot);
 	void ShowTooltip(UUI_ItemSlot* Slot);
 	void HideTooltip();
+	void UpdateTooltipPosition();
 	void RefreshAddItemOptions();
 	void SetAddItemListVisible(bool bVisible);
 };

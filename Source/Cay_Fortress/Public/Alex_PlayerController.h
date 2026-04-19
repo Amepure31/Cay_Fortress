@@ -7,7 +7,9 @@
 #include "Alex_PlayerController.generated.h"
 
 class UInventoryComponent;
+class UPlayerInteractComponent;
 class UUserWidget;
+class ALootContainerActor;
 
 UCLASS()
 class CAY_FORTRESS_API AAlex_PlayerController : public APlayerController
@@ -28,6 +30,9 @@ private:
 	void Run(const FInputActionValue& Value);
 	void StopRun();
 	void ToggleInventory();
+	void Interact();
+	bool EnsureInventoryUIVisible();
+	void OpenLootContainerUI(ALootContainerActor* LootContainer);
 
 protected:
 	UFUNCTION()
@@ -48,6 +53,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* RunAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* InteractAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> LootContainerWidgetClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* InventoryAction;
 
@@ -59,6 +70,12 @@ protected:
 
 	UPROPERTY()
 	UInventoryComponent* InventoryComponent;
+
+	UPROPERTY()
+	UPlayerInteractComponent* PlayerInteractComponent;
+
+	UPROPERTY()
+	UUserWidget* LootContainerWidget;
 
 	bool bIsToggling;
 	

@@ -5,13 +5,19 @@
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "Interaction/PlayerInteractComponent.h"
+#include "LootContainer/LootContainerActor.h"
 #include "UI/UI_Inventory.h"
+#include "UI/UI_LootContainer.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/Engine.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
 	InventoryWidget = nullptr;
+	LootContainerWidget = nullptr;
 	InventoryComponent = nullptr;
+	PlayerInteractComponent = nullptr;
 	bIsToggling = false;
 	LastToggleTime = 0.0f;
 	bToggleCooldown = false;
@@ -32,6 +38,7 @@ void AAlex_PlayerController::BeginPlay()
 	if (APawn* ControlledPawn = GetPawn())
 	{
 		InventoryComponent = ControlledPawn->FindComponentByClass<UInventoryComponent>();
+		PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
 		if (InventoryComponent)
 		{
 			InventoryComponent->OnInventoryToggled.AddDynamic(this, &AAlex_PlayerController::OnInventoryToggled);
@@ -50,6 +57,10 @@ void AAlex_PlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AAlex_PlayerController::Jump);
 		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Run);
 		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::StopRun);
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Interact);
+		}
 		
 		if (InventoryAction)
 		{
@@ -111,6 +122,169 @@ void AAlex_PlayerController::StopRun()
 			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetMoveSpeed());
 		}
 	}
+}
+
+void AAlex_PlayerController::Interact()
+{
+	if (bShowMouseCursor)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Orange, TEXT("[Interact] 当前在UI模式，忽略交互输入"));
+		}
+		return;
+	}
+
+	if (!PlayerInteractComponent)
+	{
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
+		}
+	}
+
+	if (PlayerInteractComponent)
+	{
+		if (PlayerInteractComponent->TryInteract())
+		{
+			AActor* Target = PlayerInteractComponent->GetCurrentInteractable();
+			if (ALootContainerActor* LootContainer = Cast<ALootContainerActor>(Target))
+			{
+				OpenLootContainerUI(LootContainer);
+			}
+			else if (GEngine)
+			{
+				const FString TargetClassName = Target ? Target->GetClass()->GetName() : TEXT("None");
+				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange,
+					FString::Printf(TEXT("[Interact] 交互目标不是LootContainer: %s"), *TargetClassName));
+			}
+		}
+	}
+	else if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[Interact] 玩家身上未找到PlayerInteractComponent"));
+	}
+}
+
+bool AAlex_PlayerController::EnsureInventoryUIVisible()
+{
+	if (!InventoryComponent)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] 未找到InventoryComponent"));
+		}
+		return false;
+	}
+
+	if (!InventoryWidgetClass)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] 未配置InventoryWidgetClass"));
+		}
+		return false;
+	}
+
+	if (!InventoryWidget)
+	{
+		InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
+		if (!InventoryWidget)
+		{
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] CreateWidget失败"));
+			}
+			return false;
+		}
+
+		if (UUI_Inventory* InventoryUI = Cast<UUI_Inventory>(InventoryWidget))
+		{
+			InventoryUI->BindInventory(InventoryComponent);
+		}
+	}
+
+	if (!InventoryWidget->IsInViewport())
+	{
+		InventoryWidget->AddToViewport();
+	}
+	InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	if (!InventoryComponent->IsInventoryOpen())
+	{
+		InventoryComponent->OpenInventory();
+	}
+	else if (UUI_Inventory* InventoryUI = Cast<UUI_Inventory>(InventoryWidget))
+	{
+		InventoryUI->UpdateInventory();
+	}
+
+	return true;
+}
+
+void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContainer)
+{
+	if (!LootContainer)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[LootUI] LootContainer为空，无法打开UI"));
+		}
+		return;
+	}
+
+	EnsureInventoryUIVisible();
+
+	if (!LootContainerWidgetClass)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] 未配置LootContainerWidgetClass"));
+		}
+		return;
+	}
+
+	if (!LootContainerWidget)
+	{
+		LootContainerWidget = CreateWidget<UUserWidget>(this, LootContainerWidgetClass);
+	}
+
+	if (!LootContainerWidget)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] CreateWidget失败"));
+		}
+		return;
+	}
+
+	if (UUI_LootContainer* LootContainerUI = Cast<UUI_LootContainer>(LootContainerWidget))
+	{
+		LootContainerUI->BindContainerInventory(LootContainer->GetInventoryComponent());
+		LootContainerUI->UpdateInventory();
+	}
+	else if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] Widget不是UI_LootContainer类型"));
+	}
+
+	if (!LootContainerWidget->IsInViewport())
+	{
+		LootContainerWidget->AddToViewport();
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("[LootUI] 容器UI已加入视口"));
+		}
+	}
+	LootContainerWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(LootContainerWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	SetIgnoreLookInput(true);
 }
 
 void AAlex_PlayerController::ToggleInventory()

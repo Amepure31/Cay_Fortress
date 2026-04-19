@@ -14,22 +14,25 @@ UENUM()
 enum class EInventoryItemRarity : uint8
 {
 	/** 普通 - 0级 */
-	Normal    = 0 UMETA(DisplayName = "Normal"),
+	Normal    = 0 UMETA(DisplayName = "普通"),
 	
 	/** 稀有 - 1级 */
-	Uncommon  = 1 UMETA(DisplayName = "Uncommon"),
+	Uncommon  = 1 UMETA(DisplayName = "稀有"),
 	
 	/** 罕见 - 2级 */
-	Rare      = 2 UMETA(DisplayName = "Rare"),
+	Rare      = 2 UMETA(DisplayName = "罕见"),
 	
 	/** 史诗 - 3级 */
-	Epic      = 3 UMETA(DisplayName = "Epic"),
+	Epic      = 3 UMETA(DisplayName = "史诗"),
 	
 	/** 传奇 - 4级 */
-	Legendary = 4 UMETA(DisplayName = "Legendary"),
+	Legendary = 4 UMETA(DisplayName = "传奇"),
 	
 	/** 神话 - 5级 */
-	Mythic    = 5 UMETA(DisplayName = "Mythic")
+	Mythic    = 5 UMETA(DisplayName = "神话"),
+
+	/** 枚举上限（隐藏） */
+	MAX       = 6 UMETA(Hidden)
 };
 
 /**

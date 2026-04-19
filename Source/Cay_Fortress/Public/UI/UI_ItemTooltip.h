@@ -23,8 +23,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
 	UProgressBar* DurabilityBar;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
+	UTextBlock* DurabilityText;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
 	UTextBlock* StackSizeText;
+
+	/** 类型专属详情（可选绑定） */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
+	UTextBlock* TypeSpecificText;
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SetItem(UInventoryItemInstance* InItemInstance);
