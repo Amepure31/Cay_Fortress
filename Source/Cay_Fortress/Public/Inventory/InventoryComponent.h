@@ -114,6 +114,23 @@ public:
 	bool AddItemAtPosition(class UInventoryItemDataAsset* ItemData, int32 SlotX, int32 SlotY, int32 StackSize = 1);
 
 	/**
+	 * 在指定位置按给定形状添加物品实例（用于跨容器转移等场景）
+	 */
+	class UInventoryItemInstance* AddItemWithShapeAtPosition(
+		class UInventoryItemDataAsset* ItemData,
+		int32 SlotX,
+		int32 SlotY,
+		int32 StackSize,
+		int32 Width,
+		int32 Height,
+		const FFItemShapeMask& ShapeMask,
+		int32 RotationQuarterTurns,
+		int32 Durability = -1,
+		int32 MaxDurability = -1,
+		bool bIsBound = false,
+		FDateTime BindTime = FDateTime::MinValue());
+
+	/**
 	 * 移除物品
 	 * @param ItemInstance 物品实例
 	 * @return 是否移除成功

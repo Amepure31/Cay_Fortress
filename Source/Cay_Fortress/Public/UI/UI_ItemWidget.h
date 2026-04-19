@@ -133,6 +133,18 @@ private:
 	int32 DragRotationQuarterTurns = 0;
 
 	UPROPERTY()
+	int32 DragBaseWidth = 1;
+
+	UPROPERTY()
+	int32 DragBaseHeight = 1;
+
+	UPROPERTY()
+	FFItemShapeMask DragBaseMask;
+
+	UPROPERTY()
+	int32 DragBaseRotationQuarterTurns = 0;
+
+	UPROPERTY()
 	TObjectPtr<UUI_ItemWidget> ActiveDragVisual;
 
 	UPROPERTY()

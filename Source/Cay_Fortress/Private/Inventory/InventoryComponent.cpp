@@ -4,6 +4,93 @@
 #include "Inventory/FInventoryGridCell.h"
 #include "Inventory/FItemShapeMask.h"
 
+namespace
+{
+static FFItemShapeMask MakeFullMask(int32 Width, int32 Height)
+{
+	FFItemShapeMask Mask;
+	Mask.Width = FMath::Max(1, Width);
+	Mask.Height = FMath::Max(1, Height);
+	Mask.ShapeMaskData.Init(1, Mask.Width * Mask.Height);
+	return Mask;
+}
+
+static FFItemShapeMask BuildMaskFromItemData(const FInventoryItemData& Data)
+{
+	const int32 SafeWidth = FMath::Max(1, Data.Width);
+	const int32 SafeHeight = FMath::Max(1, Data.Height);
+	if (Data.ShapeMaskData.Num() < SafeWidth * SafeHeight)
+	{
+		return MakeFullMask(SafeWidth, SafeHeight);
+	}
+
+	FFItemShapeMask Mask;
+	Mask.Width = SafeWidth;
+	Mask.Height = SafeHeight;
+	Mask.ShapeMaskData = Data.ShapeMaskData;
+	return Mask;
+}
+
+static FFItemShapeMask RotateMaskClockwise(const FFItemShapeMask& InMask)
+{
+	const int32 OldWidth = FMath::Max(1, InMask.Width);
+	const int32 OldHeight = FMath::Max(1, InMask.Height);
+	const int32 NewWidth = OldHeight;
+	const int32 NewHeight = OldWidth;
+
+	FFItemShapeMask Rotated;
+	Rotated.Width = NewWidth;
+	Rotated.Height = NewHeight;
+	Rotated.ShapeMaskData.Init(0, NewWidth * NewHeight);
+
+	for (int32 Y = 0; Y < OldHeight; ++Y)
+	{
+		for (int32 X = 0; X < OldWidth; ++X)
+		{
+			if (!InMask.IsOccupied(X, Y))
+			{
+				continue;
+			}
+
+			const int32 RotatedX = OldHeight - 1 - Y;
+			const int32 RotatedY = X;
+			Rotated.ShapeMaskData[RotatedY * NewWidth + RotatedX] = 1;
+		}
+	}
+
+	return Rotated;
+}
+
+static bool IsFullRectangularMask(const FFItemShapeMask& Mask)
+{
+	const int32 Width = FMath::Max(1, Mask.Width);
+	const int32 Height = FMath::Max(1, Mask.Height);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			if (!Mask.IsOccupied(X, Y))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static int32 GetRotationAttemptCount(const FFItemShapeMask& Mask)
+{
+	const int32 Width = FMath::Max(1, Mask.Width);
+	const int32 Height = FMath::Max(1, Mask.Height);
+	const int32 OccupiedCount = Mask.GetOccupiedCellCount();
+	if (Width == 1 && Height == 1 && OccupiedCount <= 1)
+	{
+		return 1;
+	}
+	return IsFullRectangularMask(Mask) ? 2 : 4;
+}
+}
+
 UInventoryComponent::UInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -115,15 +202,37 @@ bool UInventoryComponent::AddItem(class UInventoryItemDataAsset* ItemData, int32
 		}
 	}
 
-	int32 SlotX = -1;
-	int32 SlotY = -1;
+	FFItemShapeMask TryMask = BuildMaskFromItemData(Data);
+	int32 TryWidth = FMath::Max(1, TryMask.Width);
+	int32 TryHeight = FMath::Max(1, TryMask.Height);
+	const int32 RotationAttempts = GetRotationAttemptCount(TryMask);
 
-	if (!FindSpaceForItem(Data.Width, Data.Height, FFItemShapeMask(), SlotX, SlotY))
+	for (int32 RotationStep = 0; RotationStep < RotationAttempts; ++RotationStep)
 	{
-		return false;
+		int32 SlotX = -1;
+		int32 SlotY = -1;
+		if (FindSpaceForItem(TryWidth, TryHeight, TryMask, SlotX, SlotY))
+		{
+			return AddItemWithShapeAtPosition(
+				ItemData,
+				SlotX,
+				SlotY,
+				StackSize,
+				TryWidth,
+				TryHeight,
+				TryMask,
+				RotationStep) != nullptr;
+		}
+
+		if (RotationStep < RotationAttempts - 1)
+		{
+			TryMask = RotateMaskClockwise(TryMask);
+			TryWidth = FMath::Max(1, TryMask.Width);
+			TryHeight = FMath::Max(1, TryMask.Height);
+		}
 	}
 
-	return AddItemAtPosition(ItemData, SlotX, SlotY, StackSize);
+	return false;
 }
 
 bool UInventoryComponent::AddItemAtPosition(class UInventoryItemDataAsset* ItemData, int32 SlotX, int32 SlotY, int32 StackSize)
@@ -134,28 +243,74 @@ bool UInventoryComponent::AddItemAtPosition(class UInventoryItemDataAsset* ItemD
 	}
 
 	const FInventoryItemData& Data = ItemData->ItemData;
+	FFItemShapeMask BaseMask = BuildMaskFromItemData(Data);
+	return AddItemWithShapeAtPosition(
+		ItemData,
+		SlotX,
+		SlotY,
+		StackSize,
+		BaseMask.Width,
+		BaseMask.Height,
+		BaseMask,
+		0) != nullptr;
+}
 
-	if (!IsSpaceAvailable(Data.Width, Data.Height, FFItemShapeMask(), SlotX, SlotY))
+class UInventoryItemInstance* UInventoryComponent::AddItemWithShapeAtPosition(
+	class UInventoryItemDataAsset* ItemData,
+	int32 SlotX,
+	int32 SlotY,
+	int32 StackSize,
+	int32 Width,
+	int32 Height,
+	const FFItemShapeMask& ShapeMask,
+	int32 RotationQuarterTurns,
+	int32 Durability,
+	int32 MaxDurability,
+	bool bIsBound,
+	FDateTime BindTime)
+{
+	if (!ItemData)
 	{
-		return false;
+		return nullptr;
+	}
+
+	const int32 SafeWidth = FMath::Max(1, Width);
+	const int32 SafeHeight = FMath::Max(1, Height);
+	if (!IsSpaceAvailable(SafeWidth, SafeHeight, ShapeMask, SlotX, SlotY))
+	{
+		return nullptr;
 	}
 
 	UInventoryItemInstance* NewItem = NewObject<UInventoryItemInstance>(this);
 	if (!NewItem)
 	{
-		return false;
+		return nullptr;
 	}
 
 	NewItem->SetItemData(ItemData);
-	NewItem->StackSize = StackSize;
+	NewItem->StackSize = FMath::Max(1, StackSize);
+	NewItem->Width = SafeWidth;
+	NewItem->Height = SafeHeight;
+	NewItem->ShapeMask = ShapeMask;
+	NewItem->RotationQuarterTurns = ((RotationQuarterTurns % 4) + 4) % 4;
 	NewItem->SlotX = SlotX;
 	NewItem->SlotY = SlotY;
+	NewItem->bIsBound = bIsBound;
+	NewItem->BindTime = BindTime;
+
+	if (MaxDurability >= 0)
+	{
+		NewItem->MaxDurability = MaxDurability;
+	}
+	if (Durability >= 0)
+	{
+		NewItem->Durability = Durability;
+	}
 
 	Items.Add(NewItem);
 	OccupyGrid(NewItem, SlotX, SlotY);
 	NotifyInventoryChanged();
-
-	return true;
+	return NewItem;
 }
 
 bool UInventoryComponent::RemoveItem(class UInventoryItemInstance* ItemInstance)

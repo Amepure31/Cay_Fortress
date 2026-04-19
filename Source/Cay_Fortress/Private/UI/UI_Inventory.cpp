@@ -237,6 +237,12 @@ FReply UUI_Inventory::NativeOnMouseButtonUp(const FGeometry& InGeometry, const F
 {
 	if (DraggedItemWidget && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
+		if (TryDiscardDraggedItem(DraggedItemWidget, InGeometry, InMouseEvent.GetScreenSpacePosition()))
+		{
+			SetDraggedItemWidget(nullptr);
+			return FReply::Handled();
+		}
+
 		UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(InMouseEvent.GetScreenSpacePosition());
 		bool bPlaced = false;
 		if (HoveredSlot)
@@ -331,6 +337,12 @@ bool UUI_Inventory::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEve
 	UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(InDragDropEvent.GetScreenSpacePosition());
 	if (!HoveredSlot)
 	{
+		if (TryDiscardDraggedItem(SourceItemWidget, InGeometry, InDragDropEvent.GetScreenSpacePosition()))
+		{
+			SetDraggedItemWidget(nullptr);
+			return true;
+		}
+
 		ClearPlacementPreview();
 		UpdateInventory();
 		return false;
@@ -602,6 +614,53 @@ void UUI_Inventory::UpdateTooltipPosition()
 
 	MousePosition += FVector2D(20.0f, 20.0f);
 	ActiveTooltip->SetPositionInViewport(MousePosition, false);
+}
+
+bool UUI_Inventory::IsDropInDiscardZone(const FGeometry& InventoryGeometry, const FVector2D& ScreenPosition) const
+{
+	const FVector2D LocalPos = InventoryGeometry.AbsoluteToLocal(ScreenPosition);
+	const FVector2D LocalSize = InventoryGeometry.GetLocalSize();
+	const bool bWithinX = LocalPos.X >= 0.0f && LocalPos.X <= LocalSize.X;
+	const bool bBelow = LocalPos.Y > LocalSize.Y;
+	return bWithinX && bBelow;
+}
+
+bool UUI_Inventory::TryDiscardDraggedItem(UUI_ItemWidget* ItemWidget, const FGeometry& InventoryGeometry, const FVector2D& ScreenPosition)
+{
+	if (!ItemWidget || !IsDropInDiscardZone(InventoryGeometry, ScreenPosition))
+	{
+		return false;
+	}
+
+	UInventoryItemInstance* ItemInstance = ItemWidget->GetItemInstance();
+	if (!ItemInstance)
+	{
+		return false;
+	}
+
+	UUI_Inventory* SourceInventoryWidget = ItemWidget->GetOwningInventory();
+	UInventoryComponent* SourceInventory = SourceInventoryWidget ? SourceInventoryWidget->GetBoundInventory() : BoundInventory;
+	if (!SourceInventory)
+	{
+		return false;
+	}
+
+	const bool bRemoved = SourceInventory->RemoveItem(ItemInstance);
+	if (!bRemoved)
+	{
+		return false;
+	}
+
+	ClearPlacementPreview();
+	UpdateInventory();
+	if (SourceInventoryWidget && SourceInventoryWidget != this)
+	{
+		SourceInventoryWidget->ClearPlacementPreview();
+		SourceInventoryWidget->SetDraggedItemWidget(nullptr);
+		SourceInventoryWidget->UpdateInventory();
+	}
+
+	return true;
 }
 
 void UUI_Inventory::SetDraggedItemWidget(UUI_ItemWidget* InWidget)
@@ -924,7 +983,29 @@ bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 Origin
 	// Cross-inventory transfer: remove from source inventory, add to target inventory, then apply drag footprint.
 	if (SourceInventory && SourceInventory != BoundInventory)
 	{
-		if (!BoundInventory->IsSpaceAvailable(NewWidth, NewHeight, NewShapeMask, OriginSlotX, OriginSlotY))
+		if (!ItemInstance->ItemData)
+		{
+			ClearPlacementPreview();
+			return false;
+		}
+
+		const TObjectPtr<UInventoryItemDataAsset> ItemDataAsset = ItemInstance->ItemData;
+		const int32 StackSize = FMath::Max(1, ItemInstance->StackSize);
+		UInventoryItemInstance* AddedItem = BoundInventory->AddItemWithShapeAtPosition(
+			ItemDataAsset,
+			OriginSlotX,
+			OriginSlotY,
+			StackSize,
+			NewWidth,
+			NewHeight,
+			NewShapeMask,
+			NewRotationQuarterTurns,
+			ItemInstance->Durability,
+			ItemInstance->MaxDurability,
+			ItemInstance->bIsBound,
+			ItemInstance->BindTime
+		);
+		if (!AddedItem)
 		{
 			ClearPlacementPreview();
 			if (SourceInventoryWidget)
@@ -936,31 +1017,9 @@ bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 Origin
 			return false;
 		}
 
-		if (!ItemInstance->ItemData)
-		{
-			ClearPlacementPreview();
-			return false;
-		}
-
-		const TObjectPtr<UInventoryItemDataAsset> ItemDataAsset = ItemInstance->ItemData;
-		const int32 StackSize = FMath::Max(1, ItemInstance->StackSize);
-		const int32 SourceSlotX = ItemInstance->SlotX;
-		const int32 SourceSlotY = ItemInstance->SlotY;
-
 		if (!SourceInventory->RemoveItem(ItemInstance))
 		{
-			ClearPlacementPreview();
-			return false;
-		}
-
-		if (!BoundInventory->AddItemAtPosition(ItemDataAsset, OriginSlotX, OriginSlotY, StackSize))
-		{
-			const bool bRestoredAtOriginal = SourceInventory->AddItemAtPosition(ItemDataAsset, SourceSlotX, SourceSlotY, StackSize);
-			if (!bRestoredAtOriginal)
-			{
-				SourceInventory->AddItem(ItemDataAsset, StackSize);
-			}
-
+			BoundInventory->RemoveItem(AddedItem);
 			ClearPlacementPreview();
 			if (SourceInventoryWidget)
 			{
@@ -970,20 +1029,6 @@ bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 Origin
 			}
 			UpdateInventory();
 			return false;
-		}
-
-		UInventoryItemInstance* AddedItem = BoundInventory->GetItemAtPosition(OriginSlotX, OriginSlotY);
-		if (AddedItem)
-		{
-			BoundInventory->MoveItemWithShape(
-				AddedItem,
-				OriginSlotX,
-				OriginSlotY,
-				NewWidth,
-				NewHeight,
-				NewShapeMask,
-				NewRotationQuarterTurns
-			);
 		}
 
 		ItemWidget->SetOwningInventory(this);

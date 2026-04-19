@@ -133,6 +133,8 @@ private:
 	void SuppressDraggedItemSlotVisuals(class UInventoryItemInstance* ItemInstance);
 	void ShowTooltipForItem(class UInventoryItemInstance* ItemInstance);
 	void UpdateHoverStateFromCursor();
+	bool TryDiscardDraggedItem(class UUI_ItemWidget* ItemWidget, const FGeometry& InventoryGeometry, const FVector2D& ScreenPosition);
+	bool IsDropInDiscardZone(const FGeometry& InventoryGeometry, const FVector2D& ScreenPosition) const;
 
 	UPROPERTY()
 	UInventoryComponent* BoundInventory;

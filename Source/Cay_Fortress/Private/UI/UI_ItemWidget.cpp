@@ -113,6 +113,23 @@ static FFItemShapeMask RotateMaskClockwise(const FFItemShapeMask& InMask)
 	return RotatedMask;
 }
 
+static bool IsFullRectangularMask(const FFItemShapeMask& InMask)
+{
+	const int32 Width = FMath::Max(1, InMask.Width);
+	const int32 Height = FMath::Max(1, InMask.Height);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			if (!InMask.IsOccupied(X, Y))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 static void ForceStackTextBottomRight(UTextBlock* StackText, const FVector2D* ItemPixelSize)
 {
 	if (!StackText || !StackText->Slot)
@@ -230,6 +247,10 @@ void UUI_ItemWidget::BeginDragSession()
 	DragFootprintWidth = FMath::Max(1, BoundItem->Width);
 	DragFootprintHeight = FMath::Max(1, BoundItem->Height);
 	DragFootprintMask = NormalizeMask(BoundItem->ShapeMask, DragFootprintWidth, DragFootprintHeight);
+	DragBaseWidth = DragFootprintWidth;
+	DragBaseHeight = DragFootprintHeight;
+	DragBaseMask = DragFootprintMask;
+	DragBaseRotationQuarterTurns = DragRotationQuarterTurns;
 }
 
 void UUI_ItemWidget::EndDragSession()
@@ -251,6 +272,46 @@ void UUI_ItemWidget::RotateDragFootprintClockwise()
 {
 	if (!bDragSessionActive || !BoundItem)
 	{
+		return;
+	}
+
+	// Single-cell items are explicitly non-rotatable.
+	if (DragBaseWidth == 1 && DragBaseHeight == 1)
+	{
+		return;
+	}
+
+	// Full rectangular items only toggle between base orientation and +90 degree orientation.
+	if (IsFullRectangularMask(DragBaseMask))
+	{
+		const int32 PreviousWidth = DragFootprintWidth;
+		const int32 PreviousHeight = DragFootprintHeight;
+		const int32 PreviousGrabX = DragGrabCellX;
+		const int32 PreviousGrabY = DragGrabCellY;
+
+		// Toggle strictly between 0° and 90° to avoid drifting into 180°/270°.
+		const bool bCurrentlyHorizontal = ((DragRotationQuarterTurns % 2) == 0);
+		DragRotationQuarterTurns = bCurrentlyHorizontal ? 1 : 0;
+
+		DragFootprintWidth = PreviousHeight;
+		DragFootprintHeight = PreviousWidth;
+		DragFootprintMask = MakeFullMask(DragFootprintWidth, DragFootprintHeight);
+
+		// Keep cursor attached to same logical cell through the 90-degree toggle.
+		DragGrabCellX = PreviousHeight - 1 - PreviousGrabY;
+		DragGrabCellY = PreviousGrabX;
+
+		DragGrabCellX = FMath::Clamp(DragGrabCellX, 0, FMath::Max(0, DragFootprintWidth - 1));
+		DragGrabCellY = FMath::Clamp(DragGrabCellY, 0, FMath::Max(0, DragFootprintHeight - 1));
+
+		UpdateActiveDragVisualHostSize();
+		UpdateDragOperationAnchor();
+		ApplyVisualDimensions(DragFootprintWidth, DragFootprintHeight);
+
+		if (ActiveDragVisual && ActiveDragVisual != this)
+		{
+			ActiveDragVisual->SetDragFootprintInternal(DragFootprintWidth, DragFootprintHeight, DragFootprintMask, DragRotationQuarterTurns);
+		}
 		return;
 	}
 
