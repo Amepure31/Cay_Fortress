@@ -4,9 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "UI/UI_Inventory.h"
+#include "Inventory/InventoryItemRarity.h"
 #include "UI_LootContainer.generated.h"
 
 class UInventoryComponent;
+class UButton;
+class UComboBoxString;
 
 /**
  * 容器库存UI
@@ -25,6 +28,29 @@ public:
 	UInventoryComponent* GetContainerInventory() const { return ContainerInventory; }
 
 protected:
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
+	UFUNCTION(BlueprintCallable, Category = "LootContainer|Refresh")
+	void OnRefreshButtonClicked();
+
+	UFUNCTION()
+	void OnRefreshTypeSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION(BlueprintCallable, Category = "LootContainer|Refresh")
+	void RefreshFoodItems();
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "LootContainer|Refresh")
+	TObjectPtr<UButton> RefreshButton;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "LootContainer|Refresh")
+	TObjectPtr<UComboBoxString> RefreshTypeComboBox;
+
 	UPROPERTY(BlueprintReadOnly, Category = "LootContainer")
 	TObjectPtr<UInventoryComponent> ContainerInventory;
+
+private:
+	void EnsureRefreshOptions();
+	void SetRefreshTypeListVisible(bool bVisible);
+	EInventoryItemRarity RollFoodRarityByNormalDistribution() const;
 };

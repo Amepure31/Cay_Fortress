@@ -51,7 +51,7 @@ static UWidget* CreateItemWidgetConstrainedDragVisual(
 	return DragHostSizeBox;
 }
 
-static FFItemShapeMask MakeFullMask(int32 Width, int32 Height)
+static FFItemShapeMask MakeFullMask_UIIW(int32 Width, int32 Height)
 {
 	FFItemShapeMask Result;
 	Result.Width = FMath::Max(1, Width);
@@ -60,13 +60,13 @@ static FFItemShapeMask MakeFullMask(int32 Width, int32 Height)
 	return Result;
 }
 
-static FFItemShapeMask NormalizeMask(const FFItemShapeMask& InMask, int32 Width, int32 Height)
+static FFItemShapeMask NormalizeMask_UIIW(const FFItemShapeMask& InMask, int32 Width, int32 Height)
 {
 	const int32 SafeWidth = FMath::Max(1, Width);
 	const int32 SafeHeight = FMath::Max(1, Height);
 	if (InMask.Width <= 0 || InMask.Height <= 0 || InMask.ShapeMaskData.Num() < InMask.Width * InMask.Height)
 	{
-		return MakeFullMask(SafeWidth, SafeHeight);
+		return MakeFullMask_UIIW(SafeWidth, SafeHeight);
 	}
 
 	FFItemShapeMask Result;
@@ -83,7 +83,7 @@ static FFItemShapeMask NormalizeMask(const FFItemShapeMask& InMask, int32 Width,
 	return Result;
 }
 
-static FFItemShapeMask RotateMaskClockwise(const FFItemShapeMask& InMask)
+static FFItemShapeMask RotateMaskClockwise_UIIW(const FFItemShapeMask& InMask)
 {
 	const int32 OldWidth = FMath::Max(1, InMask.Width);
 	const int32 OldHeight = FMath::Max(1, InMask.Height);
@@ -113,7 +113,7 @@ static FFItemShapeMask RotateMaskClockwise(const FFItemShapeMask& InMask)
 	return RotatedMask;
 }
 
-static bool IsFullRectangularMask(const FFItemShapeMask& InMask)
+static bool IsFullRectangularMask_UIIW(const FFItemShapeMask& InMask)
 {
 	const int32 Width = FMath::Max(1, InMask.Width);
 	const int32 Height = FMath::Max(1, InMask.Height);
@@ -246,7 +246,7 @@ void UUI_ItemWidget::BeginDragSession()
 	DragRotationQuarterTurns = ((BoundItem->RotationQuarterTurns % 4) + 4) % 4;
 	DragFootprintWidth = FMath::Max(1, BoundItem->Width);
 	DragFootprintHeight = FMath::Max(1, BoundItem->Height);
-	DragFootprintMask = NormalizeMask(BoundItem->ShapeMask, DragFootprintWidth, DragFootprintHeight);
+	DragFootprintMask = NormalizeMask_UIIW(BoundItem->ShapeMask, DragFootprintWidth, DragFootprintHeight);
 	DragBaseWidth = DragFootprintWidth;
 	DragBaseHeight = DragFootprintHeight;
 	DragBaseMask = DragFootprintMask;
@@ -282,7 +282,7 @@ void UUI_ItemWidget::RotateDragFootprintClockwise()
 	}
 
 	// Full rectangular items only toggle between base orientation and +90 degree orientation.
-	if (IsFullRectangularMask(DragBaseMask))
+	if (IsFullRectangularMask_UIIW(DragBaseMask))
 	{
 		const int32 PreviousWidth = DragFootprintWidth;
 		const int32 PreviousHeight = DragFootprintHeight;
@@ -295,7 +295,7 @@ void UUI_ItemWidget::RotateDragFootprintClockwise()
 
 		DragFootprintWidth = PreviousHeight;
 		DragFootprintHeight = PreviousWidth;
-		DragFootprintMask = MakeFullMask(DragFootprintWidth, DragFootprintHeight);
+		DragFootprintMask = MakeFullMask_UIIW(DragFootprintWidth, DragFootprintHeight);
 
 		// Keep cursor attached to same logical cell through the 90-degree toggle.
 		DragGrabCellX = PreviousHeight - 1 - PreviousGrabY;
@@ -319,7 +319,7 @@ void UUI_ItemWidget::RotateDragFootprintClockwise()
 	const int32 PreviousGrabX = DragGrabCellX;
 	const int32 PreviousGrabY = DragGrabCellY;
 
-	DragFootprintMask = RotateMaskClockwise(DragFootprintMask);
+	DragFootprintMask = RotateMaskClockwise_UIIW(DragFootprintMask);
 	DragFootprintWidth = DragFootprintMask.Width;
 	DragFootprintHeight = DragFootprintMask.Height;
 	DragRotationQuarterTurns = (DragRotationQuarterTurns + 1) % 4;
@@ -494,7 +494,7 @@ void UUI_ItemWidget::SetDragFootprintInternal(int32 InWidth, int32 InHeight, con
 	bDragSessionActive = true;
 	DragFootprintWidth = FMath::Max(1, InWidth);
 	DragFootprintHeight = FMath::Max(1, InHeight);
-	DragFootprintMask = NormalizeMask(InMask, DragFootprintWidth, DragFootprintHeight);
+	DragFootprintMask = NormalizeMask_UIIW(InMask, DragFootprintWidth, DragFootprintHeight);
 	DragRotationQuarterTurns = ((InRotationQuarterTurns % 4) + 4) % 4;
 	ApplyVisualDimensions(DragFootprintWidth, DragFootprintHeight);
 }
