@@ -18,6 +18,8 @@ AAlex_PlayerController::AAlex_PlayerController()
 	LootContainerWidget = nullptr;
 	InventoryComponent = nullptr;
 	PlayerInteractComponent = nullptr;
+	bLootInteractionActive = false;
+	bInventoryOpenedByLootInteraction = false;
 	bIsToggling = false;
 	LastToggleTime = 0.0f;
 	bToggleCooldown = false;
@@ -66,6 +68,41 @@ void AAlex_PlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(InventoryAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ToggleInventory);
 		}
+	}
+}
+
+void AAlex_PlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bLootInteractionActive)
+	{
+		return;
+	}
+
+	if (!PlayerInteractComponent)
+	{
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
+		}
+	}
+
+	if (!PlayerInteractComponent)
+	{
+		CloseLootContainerUI(true);
+		return;
+	}
+
+	AActor* CurrentTarget = PlayerInteractComponent->GetCurrentInteractable();
+	ALootContainerActor* CurrentLootTarget = Cast<ALootContainerActor>(CurrentTarget);
+	if (CurrentLootTarget != ActiveLootContainer.Get())
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.2f, FColor::Silver, TEXT("[LootUI] 已离开交互范围，自动关闭容器界面"));
+		}
+		CloseLootContainerUI(true);
 	}
 }
 
@@ -126,6 +163,13 @@ void AAlex_PlayerController::StopRun()
 
 void AAlex_PlayerController::Interact()
 {
+	// Press E again to close the current loot interaction session.
+	if (bLootInteractionActive)
+	{
+		CloseLootContainerUI(true);
+		return;
+	}
+
 	if (bShowMouseCursor)
 	{
 		if (GEngine)
@@ -233,6 +277,7 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 		return;
 	}
 
+	const bool bInventoryWasOpenBeforeLootInteraction = InventoryComponent && InventoryComponent->IsInventoryOpen();
 	EnsureInventoryUIVisible();
 
 	if (!LootContainerWidgetClass)
@@ -277,6 +322,10 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 		}
 	}
 	LootContainerWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	LootContainer->OpenContainer();
+	ActiveLootContainer = LootContainer;
+	bLootInteractionActive = true;
+	bInventoryOpenedByLootInteraction = !bInventoryWasOpenBeforeLootInteraction;
 
 	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(LootContainerWidget->TakeWidget());
@@ -285,6 +334,61 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
 	SetIgnoreLookInput(true);
+}
+
+void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction)
+{
+	if (ALootContainerActor* LootContainer = ActiveLootContainer.Get())
+	{
+		LootContainer->CloseContainer();
+	}
+
+	ActiveLootContainer = nullptr;
+	bLootInteractionActive = false;
+
+	if (LootContainerWidget)
+	{
+		LootContainerWidget->RemoveFromParent();
+		LootContainerWidget = nullptr;
+	}
+
+	const bool bShouldCloseInventory =
+		bCloseInventoryIfOpenedByLootInteraction &&
+		bInventoryOpenedByLootInteraction &&
+		InventoryComponent &&
+		InventoryComponent->IsInventoryOpen();
+
+	bInventoryOpenedByLootInteraction = false;
+
+	if (bShouldCloseInventory)
+	{
+		InventoryComponent->CloseInventory();
+
+		// Defensive fallback: if inventory toggle delegate is not fired for any reason,
+		// still restore camera look and game-only input immediately.
+		FInputModeGameOnly InputMode;
+		SetInputMode(InputMode);
+		bShowMouseCursor = false;
+		SetIgnoreLookInput(false);
+		return;
+	}
+
+	if (InventoryComponent && InventoryComponent->IsInventoryOpen() && InventoryWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(InventoryWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
+		SetIgnoreLookInput(true);
+		return;
+	}
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+	bShowMouseCursor = false;
+	SetIgnoreLookInput(false);
 }
 
 void AAlex_PlayerController::ToggleInventory()
@@ -384,6 +488,11 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 	}
 	else
 	{
+		if (bLootInteractionActive)
+		{
+			CloseLootContainerUI(false);
+		}
+
 		if (InventoryWidget)
 		{
 			InventoryWidget->RemoveFromParent();

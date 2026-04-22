@@ -22,6 +22,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	void Move(const FInputActionValue& Value);
@@ -33,6 +34,7 @@ private:
 	void Interact();
 	bool EnsureInventoryUIVisible();
 	void OpenLootContainerUI(ALootContainerActor* LootContainer);
+	void CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction);
 
 protected:
 	UFUNCTION()
@@ -76,6 +78,12 @@ protected:
 
 	UPROPERTY()
 	UUserWidget* LootContainerWidget;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ALootContainerActor> ActiveLootContainer;
+
+	bool bLootInteractionActive;
+	bool bInventoryOpenedByLootInteraction;
 
 	bool bIsToggling;
 	
