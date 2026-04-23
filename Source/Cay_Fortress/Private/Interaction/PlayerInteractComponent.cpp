@@ -6,7 +6,6 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
-#include "Engine/Engine.h"
 #include "CollisionQueryParams.h"
 
 UPlayerInteractComponent::UPlayerInteractComponent()
@@ -136,10 +135,5 @@ AActor* UPlayerInteractComponent::FindBestInteractable() const
 
 void UPlayerInteractComponent::ShowDebugMessage(const FString& Message, FColor Color, float Duration) const
 {
-	if (!bDebugInteraction || !GEngine)
-	{
-		return;
-	}
-
-	GEngine->AddOnScreenDebugMessage(-1, Duration, Color, Message);
+	// Screen debug prompts are intentionally disabled.
 }

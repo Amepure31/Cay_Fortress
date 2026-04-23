@@ -13,6 +13,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Blueprint.h"
@@ -357,6 +359,16 @@ bool UUI_Inventory::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEve
 
 void UUI_Inventory::NativeDestruct()
 {
+	// Tooltip is added directly to viewport, so it must be explicitly removed
+	// when inventory UI is closed/destroyed.
+	if (ActiveTooltip)
+	{
+		ActiveTooltip->RemoveFromParent();
+		ActiveTooltip = nullptr;
+	}
+	ClearItemHoverPreview();
+	HideTooltip();
+
 	if (AddItemButton)
 	{
 		AddItemButton->OnClicked.RemoveDynamic(this, &UUI_Inventory::OnAddItemButtonClicked);
@@ -373,7 +385,6 @@ void UUI_Inventory::NativeDestruct()
 	
 	BoundInventory = nullptr;
 	ItemSlots.Empty();
-	ActiveTooltip = nullptr;
 	SetDraggedItemWidget(nullptr);
 	HoveredItemInstance = nullptr;
 	Super::NativeDestruct();
@@ -549,6 +560,39 @@ void UUI_Inventory::SetSlotSize()
 	
 	GridPanel->SetMinDesiredSlotWidth(SizeToUse + SpacingToUse);
 	GridPanel->SetMinDesiredSlotHeight(SizeToUse + SpacingToUse);
+	UpdateGridPanelSize();
+}
+
+void UUI_Inventory::UpdateGridPanelSize()
+{
+	if (!GridPanel)
+	{
+		return;
+	}
+
+	const int32 WidthToUse = FMath::Max(1, BoundInventory ? BoundInventory->GridWidth : GridWidth);
+	const int32 HeightToUse = FMath::Max(1, BoundInventory ? BoundInventory->GridHeight : GridHeight);
+	const int32 SizeToUse = ClampSlotSizeToMinimum(SlotSize > 0 ? SlotSize : MinInventorySlotSize);
+	const int32 SpacingToUse = FMath::Max(0, SlotSpacing);
+	const int32 CellPixelSize = SizeToUse + SpacingToUse;
+
+	const FVector2D PanelPixelSize(
+		static_cast<float>(WidthToUse * CellPixelSize),
+		static_cast<float>(HeightToUse * CellPixelSize));
+
+	// If GridPanel is inside a SizeBox, drive exact panel footprint through overrides.
+	if (USizeBox* ParentSizeBox = Cast<USizeBox>(GridPanel->GetParent()))
+	{
+		ParentSizeBox->SetWidthOverride(PanelPixelSize.X);
+		ParentSizeBox->SetHeightOverride(PanelPixelSize.Y);
+	}
+
+	// If GridPanel uses a Canvas slot, force explicit pixel size.
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GridPanel->Slot))
+	{
+		CanvasSlot->SetAutoSize(false);
+		CanvasSlot->SetSize(PanelPixelSize);
+	}
 }
 
 int32 UUI_Inventory::GetEffectiveSlotSize() const
@@ -1123,6 +1167,15 @@ TArray<UInventoryItemDataAsset*> UUI_Inventory::GetAvailableItemDataAssets() con
 
 void UUI_Inventory::CloseInventory()
 {
+	// Ensure hover preview/tooltip never lingers after closing inventory.
+	ClearItemHoverPreview();
+	HideTooltip();
+	if (ActiveTooltip)
+	{
+		ActiveTooltip->RemoveFromParent();
+		ActiveTooltip = nullptr;
+	}
+
 	if (BoundInventory)
 	{
 		BoundInventory->CloseInventory();

@@ -64,6 +64,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Container")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
+	/** 由RoomActor触发的第二阶段物品刷新入口（具体逻辑可在蓝图中重写） */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Container|Refresh")
+	void RefreshItemsByRoom();
+
 	/** IInteractableInterface */
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 	virtual void Interact_Implementation(AActor* Interactor) override;

@@ -10,7 +10,6 @@
 #include "UI/UI_Inventory.h"
 #include "UI/UI_LootContainer.h"
 #include "Kismet/GameplayStatics.h"
-#include "Engine/Engine.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
@@ -98,10 +97,6 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 	ALootContainerActor* CurrentLootTarget = Cast<ALootContainerActor>(CurrentTarget);
 	if (CurrentLootTarget != ActiveLootContainer.Get())
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 1.2f, FColor::Silver, TEXT("[LootUI] 已离开交互范围，自动关闭容器界面"));
-		}
 		CloseLootContainerUI(true);
 	}
 }
@@ -172,10 +167,6 @@ void AAlex_PlayerController::Interact()
 
 	if (bShowMouseCursor)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Orange, TEXT("[Interact] 当前在UI模式，忽略交互输入"));
-		}
 		return;
 	}
 
@@ -196,17 +187,7 @@ void AAlex_PlayerController::Interact()
 			{
 				OpenLootContainerUI(LootContainer);
 			}
-			else if (GEngine)
-			{
-				const FString TargetClassName = Target ? Target->GetClass()->GetName() : TEXT("None");
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange,
-					FString::Printf(TEXT("[Interact] 交互目标不是LootContainer: %s"), *TargetClassName));
-			}
 		}
-	}
-	else if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[Interact] 玩家身上未找到PlayerInteractComponent"));
 	}
 }
 
@@ -214,19 +195,11 @@ bool AAlex_PlayerController::EnsureInventoryUIVisible()
 {
 	if (!InventoryComponent)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] 未找到InventoryComponent"));
-		}
 		return false;
 	}
 
 	if (!InventoryWidgetClass)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] 未配置InventoryWidgetClass"));
-		}
 		return false;
 	}
 
@@ -235,10 +208,6 @@ bool AAlex_PlayerController::EnsureInventoryUIVisible()
 		InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
 		if (!InventoryWidget)
 		{
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[InventoryUI] CreateWidget失败"));
-			}
 			return false;
 		}
 
@@ -270,10 +239,6 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 {
 	if (!LootContainer)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("[LootUI] LootContainer为空，无法打开UI"));
-		}
 		return;
 	}
 
@@ -282,10 +247,6 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 
 	if (!LootContainerWidgetClass)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] 未配置LootContainerWidgetClass"));
-		}
 		return;
 	}
 
@@ -296,30 +257,22 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 
 	if (!LootContainerWidget)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] CreateWidget失败"));
-		}
 		return;
 	}
 
 	if (UUI_LootContainer* LootContainerUI = Cast<UUI_LootContainer>(LootContainerWidget))
 	{
-		LootContainerUI->BindContainerInventory(LootContainer->GetInventoryComponent());
+		LootContainerUI->BindLootContainer(LootContainer);
 		LootContainerUI->UpdateInventory();
 	}
-	else if (GEngine)
+	else
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[LootUI] Widget不是UI_LootContainer类型"));
+		return;
 	}
 
 	if (!LootContainerWidget->IsInViewport())
 	{
 		LootContainerWidget->AddToViewport();
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("[LootUI] 容器UI已加入视口"));
-		}
 	}
 	LootContainerWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	LootContainer->OpenContainer();

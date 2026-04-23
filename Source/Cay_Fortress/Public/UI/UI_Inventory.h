@@ -15,6 +15,7 @@ class UInventoryItemDataAsset;
 class UButton;
 class UComboBoxString;
 class UDragDropOperation;
+class USizeBox;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnItemSlotClicked, UUI_ItemSlot*, ItemSlot);
 
@@ -163,6 +164,7 @@ private:
 protected:
 	void CreateGrid();
 	void SetSlotSize();
+	void UpdateGridPanelSize();
 	void OnItemSlotClickedInternal(UUI_ItemSlot* Slot);
 	void ShowTooltip(UUI_ItemSlot* Slot);
 	void HideTooltip();

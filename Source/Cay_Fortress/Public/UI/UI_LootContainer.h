@@ -4,12 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "UI/UI_Inventory.h"
-#include "Inventory/InventoryItemRarity.h"
 #include "UI_LootContainer.generated.h"
 
 class UInventoryComponent;
 class UButton;
 class UComboBoxString;
+class UTextBlock;
+class ALootContainerActor;
 
 /**
  * 容器库存UI
@@ -21,6 +22,9 @@ class CAY_FORTRESS_API UUI_LootContainer : public UUI_Inventory
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintCallable, Category = "LootContainer")
+	void BindLootContainer(ALootContainerActor* InLootContainer);
+
 	UFUNCTION(BlueprintCallable, Category = "LootContainer")
 	void BindContainerInventory(UInventoryComponent* InContainerInventory);
 
@@ -34,23 +38,21 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "LootContainer|Refresh")
 	void OnRefreshButtonClicked();
 
-	UFUNCTION()
-	void OnRefreshTypeSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-
-	UFUNCTION(BlueprintCallable, Category = "LootContainer|Refresh")
-	void RefreshFoodItems();
-
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "LootContainer|Refresh")
 	TObjectPtr<UButton> RefreshButton;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "LootContainer|Refresh")
 	TObjectPtr<UComboBoxString> RefreshTypeComboBox;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "LootContainer")
+	TObjectPtr<UTextBlock> ContainerTypeText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "LootContainer")
+	TWeakObjectPtr<ALootContainerActor> BoundLootContainer;
+
 	UPROPERTY(BlueprintReadOnly, Category = "LootContainer")
 	TObjectPtr<UInventoryComponent> ContainerInventory;
 
 private:
-	void EnsureRefreshOptions();
-	void SetRefreshTypeListVisible(bool bVisible);
-	EInventoryItemRarity RollFoodRarityByNormalDistribution() const;
+	void UpdateContainerTypeText();
 };

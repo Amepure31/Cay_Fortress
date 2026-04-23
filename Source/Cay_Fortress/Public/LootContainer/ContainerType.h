@@ -21,6 +21,24 @@ enum class EContainerType : uint8
 	/** 医疗箱 */
 	MedicalCrate = 2 UMETA(DisplayName = "医疗箱"),
 
+	/** 马桶 */
+	Toilet = 3 UMETA(DisplayName = "马桶"),
+
+	/** 能源箱 */
+	EnergyCrate = 4 UMETA(DisplayName = "能源箱"),
+
+	/** 材料箱 */
+	MaterialCrate = 5 UMETA(DisplayName = "材料箱"),
+
+	/** 弹药箱 */
+	AmmoCrate = 6 UMETA(DisplayName = "弹药箱"),
+
+	/** 护甲箱 */
+	ArmorCrate = 7 UMETA(DisplayName = "护甲箱"),
+
+	/** 装备箱 */
+	EquipmentCrate = 8 UMETA(DisplayName = "装备箱"),
+
 	/** 枚举上限（隐藏） */
-	MAX = 3 UMETA(Hidden)
+	MAX = 9 UMETA(Hidden)
 };
