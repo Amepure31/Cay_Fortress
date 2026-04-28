@@ -1119,11 +1119,11 @@ TArray<UInventoryItemDataAsset*> UUI_Inventory::GetAllItemDataAssets() const
 {
 	TArray<UInventoryItemDataAsset*> Result;
 
-	static const FName ItemDataFolderPath(TEXT("/Game/Inventory/InventoryItemDataAsset"));
+	static const FName ItemDataFolderPath_UIInventory(TEXT("/Game/Inventory/InventoryItemDataAsset"));
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 
 	TArray<FAssetData> AssetDataList;
-	AssetRegistryModule.Get().GetAssetsByPath(ItemDataFolderPath, AssetDataList, true);
+	AssetRegistryModule.Get().GetAssetsByPath(ItemDataFolderPath_UIInventory, AssetDataList, true);
 
 	TSet<const UInventoryItemDataAsset*> UniqueAssets;
 

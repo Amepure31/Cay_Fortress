@@ -119,15 +119,11 @@ static UInventoryItemDataAsset* PickAssetByRarity(
 	return Pool[FMath::RandRange(0, Pool.Num() - 1)];
 }
 
-static UInventoryItemDataAsset* GetToiletFreshWaterAsset()
+static UInventoryItemDataAsset* LoadInventoryItemDataAssetFromBlueprintPaths(
+	const TCHAR* PrimaryPath,
+	const TCHAR* FallbackPath,
+	const FName TargetPackageName)
 {
-	// Asset path from user requirement:
-	// W:\UE5\Cay_Fortress\Content\Inventory\InventoryItemDataAsset\Food\BP_FreshWater_DA.uasset
-	constexpr const TCHAR* PrimaryPath =
-		TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA.BP_FreshWater_DA");
-	constexpr const TCHAR* FallbackPath =
-		TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA");
-
 	if (UInventoryItemDataAsset* Asset = LoadObject<UInventoryItemDataAsset>(nullptr, PrimaryPath))
 	{
 		return Asset;
@@ -137,10 +133,7 @@ static UInventoryItemDataAsset* GetToiletFreshWaterAsset()
 		return Asset;
 	}
 
-	// Last fallback: look up by package name through asset registry.
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	const FName TargetPackageName(TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA"));
-
 	TArray<FAssetData> AssetDataList;
 	AssetRegistryModule.Get().GetAssetsByPackageName(TargetPackageName, AssetDataList);
 	for (const FAssetData& AssetData : AssetDataList)
@@ -164,6 +157,30 @@ static UInventoryItemDataAsset* GetToiletFreshWaterAsset()
 	}
 
 	return nullptr;
+}
+
+static UInventoryItemDataAsset* GetToiletFreshWaterAsset()
+{
+	return LoadInventoryItemDataAssetFromBlueprintPaths(
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA.BP_FreshWater_DA"),
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA"),
+		FName(TEXT("/Game/Inventory/InventoryItemDataAsset/Food/BP_FreshWater_DA")));
+}
+
+static UInventoryItemDataAsset* GetEquipmentHelmetAsset()
+{
+	return LoadInventoryItemDataAssetFromBlueprintPaths(
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Helmet_DA.BP_Helmet_DA"),
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Helmet_DA"),
+		FName(TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Helmet_DA")));
+}
+
+static UInventoryItemDataAsset* GetEquipmentArmorAsset()
+{
+	return LoadInventoryItemDataAssetFromBlueprintPaths(
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Armor_DA.BP_Armor_DA"),
+		TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Armor_DA"),
+		FName(TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Armor_DA")));
 }
 }
 
@@ -222,6 +239,27 @@ void ALootContainerActor::RefreshItemsByRoom_Implementation()
 {
 	if (!InventoryComponent)
 	{
+		return;
+	}
+
+	if (ContainerType == EContainerType::EquipmentCrate)
+	{
+		InventoryComponent->Clear();
+		UInventoryItemDataAsset* HelmetAsset = GetEquipmentHelmetAsset();
+		UInventoryItemDataAsset* ArmorAsset = GetEquipmentArmorAsset();
+		UInventoryItemDataAsset* ChosenAsset = nullptr;
+		if (HelmetAsset && ArmorAsset)
+		{
+			ChosenAsset = FMath::RandBool() ? HelmetAsset : ArmorAsset;
+		}
+		else
+		{
+			ChosenAsset = HelmetAsset ? HelmetAsset : ArmorAsset;
+		}
+		if (ChosenAsset)
+		{
+			InventoryComponent->AddItem(ChosenAsset, RollStackSizeByThirdRule(ChosenAsset->ItemData));
+		}
 		return;
 	}
 

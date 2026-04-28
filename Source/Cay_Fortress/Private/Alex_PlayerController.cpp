@@ -9,13 +9,17 @@
 #include "LootContainer/LootContainerActor.h"
 #include "UI/UI_Inventory.h"
 #include "UI/UI_LootContainer.h"
+#include "UI/UI_Equipment.h"
+#include "Equipment/EquipmentComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
 	InventoryWidget = nullptr;
+	EquipmentWidget = nullptr;
 	LootContainerWidget = nullptr;
 	InventoryComponent = nullptr;
+	EquipmentComponent = nullptr;
 	PlayerInteractComponent = nullptr;
 	bLootInteractionActive = false;
 	bInventoryOpenedByLootInteraction = false;
@@ -39,6 +43,7 @@ void AAlex_PlayerController::BeginPlay()
 	if (APawn* ControlledPawn = GetPawn())
 	{
 		InventoryComponent = ControlledPawn->FindComponentByClass<UInventoryComponent>();
+		EquipmentComponent = ControlledPawn->FindComponentByClass<UEquipmentComponent>();
 		PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
 		if (InventoryComponent)
 		{
@@ -191,7 +196,7 @@ void AAlex_PlayerController::Interact()
 	}
 }
 
-bool AAlex_PlayerController::EnsureInventoryUIVisible()
+bool AAlex_PlayerController::EnsureInventoryUIVisible(bool bShowEquipment)
 {
 	if (!InventoryComponent)
 	{
@@ -232,7 +237,50 @@ bool AAlex_PlayerController::EnsureInventoryUIVisible()
 		InventoryUI->UpdateInventory();
 	}
 
+	if (bShowEquipment)
+	{
+		EnsureEquipmentUIVisibleWithInventory();
+	}
+	else if (EquipmentWidget)
+	{
+		EquipmentWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	return true;
+}
+
+void AAlex_PlayerController::EnsureEquipmentUIVisibleWithInventory()
+{
+	if (!EquipmentComponent || !EquipmentWidgetClass || !InventoryWidget)
+	{
+		return;
+	}
+
+	if (!EquipmentWidget)
+	{
+		EquipmentWidget = CreateWidget<UUserWidget>(this, EquipmentWidgetClass);
+		if (UUI_Equipment* EquipmentUI = Cast<UUI_Equipment>(EquipmentWidget))
+		{
+			EquipmentUI->BindEquipment(EquipmentComponent, InventoryComponent, Cast<UUI_Inventory>(InventoryWidget));
+		}
+	}
+
+	if (!EquipmentWidget)
+	{
+		return;
+	}
+
+	if (!EquipmentWidget->IsInViewport())
+	{
+		EquipmentWidget->AddToViewport();
+	}
+
+	EquipmentWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	if (UUI_Equipment* EquipmentUI = Cast<UUI_Equipment>(EquipmentWidget))
+	{
+		EquipmentUI->SetInventoryUIForCellSync(Cast<UUI_Inventory>(InventoryWidget));
+	}
 }
 
 void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContainer)
@@ -242,11 +290,23 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 		return;
 	}
 
-	const bool bInventoryWasOpenBeforeLootInteraction = InventoryComponent && InventoryComponent->IsInventoryOpen();
-	EnsureInventoryUIVisible();
-
 	if (!LootContainerWidgetClass)
 	{
+		return;
+	}
+
+	const bool bInventoryWasOpenBeforeLootInteraction = InventoryComponent && InventoryComponent->IsInventoryOpen();
+
+	// 须在 EnsureInventoryUIVisible 之前置位：OpenInventory 会触发 OnInventoryToggled，否则仍会拉起装备栏。
+	bLootInteractionActive = true;
+	ActiveLootContainer = LootContainer;
+	bInventoryOpenedByLootInteraction = !bInventoryWasOpenBeforeLootInteraction;
+
+	if (!EnsureInventoryUIVisible(false))
+	{
+		bLootInteractionActive = false;
+		ActiveLootContainer = nullptr;
+		bInventoryOpenedByLootInteraction = false;
 		return;
 	}
 
@@ -257,6 +317,9 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 
 	if (!LootContainerWidget)
 	{
+		bLootInteractionActive = false;
+		ActiveLootContainer = nullptr;
+		bInventoryOpenedByLootInteraction = false;
 		return;
 	}
 
@@ -267,6 +330,9 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 	}
 	else
 	{
+		bLootInteractionActive = false;
+		ActiveLootContainer = nullptr;
+		bInventoryOpenedByLootInteraction = false;
 		return;
 	}
 
@@ -276,9 +342,6 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 	}
 	LootContainerWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	LootContainer->OpenContainer();
-	ActiveLootContainer = LootContainer;
-	bLootInteractionActive = true;
-	bInventoryOpenedByLootInteraction = !bInventoryWasOpenBeforeLootInteraction;
 
 	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(LootContainerWidget->TakeWidget());
@@ -335,6 +398,7 @@ void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedBy
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
 		SetIgnoreLookInput(true);
+		EnsureEquipmentUIVisibleWithInventory();
 		return;
 	}
 
@@ -399,6 +463,14 @@ void AAlex_PlayerController::ToggleInventory()
 			return;
 		}
 	}
+
+	if (!InventoryWidget->IsInViewport())
+	{
+		InventoryWidget->AddToViewport();
+	}
+	InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	EnsureEquipmentUIVisibleWithInventory();
 	
 	bIsToggling = true;
 	LastToggleTime = CurrentTime;
@@ -415,6 +487,11 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 			{
 				InventoryUI->UpdateInventory();
 			}
+		}
+
+		if (!bLootInteractionActive)
+		{
+			EnsureEquipmentUIVisibleWithInventory();
 		}
 
 		FInputModeGameAndUI InputMode;
@@ -450,6 +527,12 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 		{
 			InventoryWidget->RemoveFromParent();
 			InventoryWidget = nullptr;
+		}
+
+		if (EquipmentWidget)
+		{
+			EquipmentWidget->RemoveFromParent();
+			EquipmentWidget = nullptr;
 		}
 
 		FInputModeGameOnly InputMode;

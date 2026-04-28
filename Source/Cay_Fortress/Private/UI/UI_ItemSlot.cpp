@@ -609,27 +609,5 @@ void UUI_ItemSlot::SetOwningInventory(UUI_Inventory* InOwningInventory)
 
 FLinearColor UUI_ItemSlot::GetRarityColor(EInventoryItemRarity Rarity) const
 {
-	switch (Rarity)
-	{
-	case EInventoryItemRarity::Normal:
-		// Brushed steel gray
-		return FLinearColor(0.32f, 0.34f, 0.36f, 1.0f);
-	case EInventoryItemRarity::Uncommon:
-		// Military olive
-		return FLinearColor(0.30f, 0.38f, 0.24f, 1.0f);
-	case EInventoryItemRarity::Rare:
-		// Hardened cobalt steel
-		return FLinearColor(0.20f, 0.33f, 0.50f, 1.0f);
-	case EInventoryItemRarity::Epic:
-		// Aged violet alloy
-		return FLinearColor(0.42f, 0.26f, 0.49f, 1.0f);
-	case EInventoryItemRarity::Legendary:
-		// Brushed amber-gold
-		return FLinearColor(0.62f, 0.43f, 0.18f, 1.0f);
-	case EInventoryItemRarity::Mythic:
-		// Deep ember red
-		return FLinearColor(0.55f, 0.20f, 0.16f, 1.0f);
-	default:
-		return FLinearColor(0.32f, 0.34f, 0.36f, 1.0f);
-	}
+	return GetInventoryItemRaritySlotBackgroundColor(Rarity);
 }

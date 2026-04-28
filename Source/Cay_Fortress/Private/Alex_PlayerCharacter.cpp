@@ -6,11 +6,15 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/DamageType.h"
 #include "Inventory/InventoryComponent.h"
+#include "Equipment/EquipmentComponent.h"
 
 AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 {
 	// 创建背包组件
 	Inventory = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory"));
+
+	// 创建装备组件
+	Equipment = CreateDefaultSubobject<UEquipmentComponent>(TEXT("Equipment"));
 
 	// 创建弹簧臂组件
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -97,7 +101,13 @@ float AAlex_PlayerCharacter::TakeDamage(float Damage, const FDamageEvent& Damage
 {
 	if (Damage > 0.0f)
 	{
-		Health = FMath::Clamp(Health - Damage, 0.0f, MaxHealth);
+		float FinalDamage = Damage;
+		if (Equipment)
+		{
+			const float Reduction = Equipment->GetTotalDamageReduction();
+			FinalDamage = Damage * (1.0f - Reduction);
+		}
+		Health = FMath::Clamp(Health - FinalDamage, 0.0f, MaxHealth);
 	}
 	return Damage;
 }

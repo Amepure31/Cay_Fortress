@@ -7,6 +7,7 @@
 #include "Alex_PlayerController.generated.h"
 
 class UInventoryComponent;
+class UEquipmentComponent;
 class UPlayerInteractComponent;
 class UUserWidget;
 class ALootContainerActor;
@@ -32,7 +33,10 @@ private:
 	void StopRun();
 	void ToggleInventory();
 	void Interact();
-	bool EnsureInventoryUIVisible();
+	/** @param bShowEquipment 为 false 时仅显示背包（如搜刮容器），不创建/显示装备栏。 */
+	bool EnsureInventoryUIVisible(bool bShowEquipment = true);
+	/** 与背包同时显示装备栏（创建/入视口/可见性/格子同步）。 */
+	void EnsureEquipmentUIVisibleWithInventory();
 	void OpenLootContainerUI(ALootContainerActor* LootContainer);
 	void CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction);
 
@@ -67,11 +71,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> InventoryWidgetClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Equipment, meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> EquipmentWidgetClass;
+
 	UPROPERTY()
 	UUserWidget* InventoryWidget;
 
 	UPROPERTY()
+	UUserWidget* EquipmentWidget;
+
+	UPROPERTY()
 	UInventoryComponent* InventoryComponent;
+
+	UPROPERTY()
+	UEquipmentComponent* EquipmentComponent;
 
 	UPROPERTY()
 	UPlayerInteractComponent* PlayerInteractComponent;

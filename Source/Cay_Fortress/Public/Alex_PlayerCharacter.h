@@ -7,6 +7,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class UInventoryComponent;
+class UEquipmentComponent;
 
 /**
  * 玩家角色类
@@ -35,6 +36,10 @@ protected:
 	// 背包组件
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	UInventoryComponent* Inventory;
+
+	// 装备组件
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	UEquipmentComponent* Equipment;
 
 public:
 	/** 生命值 */
@@ -80,6 +85,9 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Inventory")
 	UInventoryComponent* GetInventory() const { return Inventory; }
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Equipment")
+	UEquipmentComponent* GetEquipment() const { return Equipment; }
 
 	/**
 	 * 获取当前生命值

@@ -45,3 +45,25 @@ class CAY_FORTRESS_API UInventoryItemRarity : public UEnum
 	GENERATED_BODY()
 	
 };
+
+/** 背包格子、装备槽等「物品底」用色，与 UUI_ItemSlot::GetRarityColor 一致。 */
+inline FLinearColor GetInventoryItemRaritySlotBackgroundColor(EInventoryItemRarity Rarity)
+{
+	switch (Rarity)
+	{
+	case EInventoryItemRarity::Normal:
+		return FLinearColor(0.32f, 0.34f, 0.36f, 1.0f);
+	case EInventoryItemRarity::Uncommon:
+		return FLinearColor(0.30f, 0.38f, 0.24f, 1.0f);
+	case EInventoryItemRarity::Rare:
+		return FLinearColor(0.20f, 0.33f, 0.50f, 1.0f);
+	case EInventoryItemRarity::Epic:
+		return FLinearColor(0.42f, 0.26f, 0.49f, 1.0f);
+	case EInventoryItemRarity::Legendary:
+		return FLinearColor(0.62f, 0.43f, 0.18f, 1.0f);
+	case EInventoryItemRarity::Mythic:
+		return FLinearColor(0.55f, 0.20f, 0.16f, 1.0f);
+	default:
+		return FLinearColor(0.32f, 0.34f, 0.36f, 1.0f);
+	}
+}

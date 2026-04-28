@@ -31,11 +31,14 @@ enum class EWeaponClass : uint8
 UENUM(BlueprintType)
 enum class EArmorEquipSlot : uint8
 {
-	Head        UMETA(DisplayName = "头部"),
-	Chest       UMETA(DisplayName = "胸部"),
-	Arms        UMETA(DisplayName = "手臂"),
-	Legs        UMETA(DisplayName = "腿部"),
-	FullBody    UMETA(DisplayName = "全身")
+	Head     UMETA(DisplayName = "头盔"),
+	Chest    UMETA(DisplayName = "护甲"),
+	/** 保留枚举值以兼容旧资产；请改为「护甲」或其它部位 */
+	Arms     UMETA(DisplayName = "护臂(已弃用)", Hidden),
+	/** 保留枚举值以兼容旧资产 */
+	Legs     UMETA(DisplayName = "护腿(已弃用)", Hidden),
+	FullBody UMETA(DisplayName = "全身"),
+	Backpack UMETA(DisplayName = "背包")
 };
 
 UENUM(BlueprintType)
