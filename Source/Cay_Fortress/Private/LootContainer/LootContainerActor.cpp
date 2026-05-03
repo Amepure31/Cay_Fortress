@@ -8,6 +8,7 @@
 #include "Inventory/InventoryItemType.h"
 #include "Inventory/InventoryItemRarity.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Blueprint.h"
 #include "Engine/Engine.h"
@@ -18,37 +19,71 @@ namespace
 	constexpr float FoodRaritySigma = 1.35f;
 	static const FName ItemDataFolderPath(TEXT("/Game/Inventory/InventoryItemDataAsset"));
 
+static void CollectInventoryItemDataAssetsUnderPath(IAssetRegistry& AssetRegistry, TArray<UInventoryItemDataAsset*>& Result)
+{
+	TSet<const UInventoryItemDataAsset*> UniqueAssets;
+
+	auto WalkAssetData = [&](const TArray<FAssetData>& AssetDataList)
+	{
+		for (const FAssetData& AssetData : AssetDataList)
+		{
+			UObject* RawAsset = AssetData.GetAsset();
+			UInventoryItemDataAsset* Asset = Cast<UInventoryItemDataAsset>(RawAsset);
+			if (!Asset)
+			{
+				if (const UBlueprint* BlueprintAsset = Cast<UBlueprint>(RawAsset))
+				{
+					if (BlueprintAsset->GeneratedClass && BlueprintAsset->GeneratedClass->IsChildOf(UInventoryItemDataAsset::StaticClass()))
+					{
+						Asset = Cast<UInventoryItemDataAsset>(BlueprintAsset->GeneratedClass->GetDefaultObject());
+					}
+				}
+			}
+
+			if (Asset && !UniqueAssets.Contains(Asset))
+			{
+				UniqueAssets.Add(Asset);
+				Result.Add(Asset);
+			}
+		}
+	};
+
+	TArray<FAssetData> AssetDataList;
+	AssetRegistry.GetAssetsByPath(ItemDataFolderPath, AssetDataList, true);
+	WalkAssetData(AssetDataList);
+
+	// Fallback: FARFilter survives cases where path listing is empty until the tree is synced.
+	if (Result.IsEmpty())
+	{
+		FARFilter Filter;
+		Filter.PackagePaths.Add(ItemDataFolderPath);
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> FilteredAssets;
+		AssetRegistry.GetAssets(Filter, FilteredAssets);
+		WalkAssetData(FilteredAssets);
+	}
+}
+
 static TArray<UInventoryItemDataAsset*> GetAllItemDataAssetsForContainerRefresh()
 {
 	TArray<UInventoryItemDataAsset*> Result;
 
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	TArray<FAssetData> AssetDataList;
-	AssetRegistryModule.Get().GetAssetsByPath(ItemDataFolderPath, AssetDataList, true);
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
-	TSet<const UInventoryItemDataAsset*> UniqueAssets;
-	for (const FAssetData& AssetData : AssetDataList)
+	CollectInventoryItemDataAssetsUnderPath(AssetRegistry, Result);
+	if (!Result.IsEmpty())
 	{
-		UObject* RawAsset = AssetData.GetAsset();
-		UInventoryItemDataAsset* Asset = Cast<UInventoryItemDataAsset>(RawAsset);
-		if (!Asset)
-		{
-			if (const UBlueprint* BlueprintAsset = Cast<UBlueprint>(RawAsset))
-			{
-				if (BlueprintAsset->GeneratedClass && BlueprintAsset->GeneratedClass->IsChildOf(UInventoryItemDataAsset::StaticClass()))
-				{
-					Asset = Cast<UInventoryItemDataAsset>(BlueprintAsset->GeneratedClass->GetDefaultObject());
-				}
-			}
-		}
-
-		if (Asset && !UniqueAssets.Contains(Asset))
-		{
-			UniqueAssets.Add(Asset);
-			Result.Add(Asset);
-		}
+		return Result;
 	}
 
+	// AssetRegistry may not have enumerated /Game inventory paths yet when Phase-2 loot runs early in PIE.
+	TArray<FString> PathsToScan;
+	PathsToScan.Add(TEXT("/Game/Inventory/InventoryItemDataAsset"));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan);
+
+	CollectInventoryItemDataAssetsUnderPath(AssetRegistry, Result);
 	return Result;
 }
 
@@ -294,7 +329,8 @@ void ALootContainerActor::RefreshItemsByRoom_Implementation()
 			}
 
 			const FInventoryItemData& ItemData = ItemDataAsset->ItemData;
-			if (ItemData.ItemType == EInventoryItemType::Food)
+			if (ItemData.ItemType == EInventoryItemType::Food ||
+				ItemData.ItemType == EInventoryItemType::Consumable_DEPRECATED)
 			{
 				CandidateAssets.Add(ItemDataAsset);
 			}

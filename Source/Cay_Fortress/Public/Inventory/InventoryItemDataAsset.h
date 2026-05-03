@@ -97,7 +97,7 @@ struct CAY_FORTRESS_API FWeaponItemStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon", meta = (DisplayName = "开镜精度", ClampMin = "0.0", UIMin = "0.0"))
 	float ADSAccuracy;
 
-	/** 所属枪械类型 */
+	/** 所属枪械类型（新武器资产Constructor默认为步枪；手枪必须改成「手枪」才会触发 ADS / Aim Offset 层与手枪开火蒙太奇分支） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon", meta = (DisplayName = "枪械类型"))
 	EWeaponClass WeaponClass;
 

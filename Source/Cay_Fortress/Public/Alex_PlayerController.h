@@ -31,6 +31,9 @@ private:
 	void Jump();
 	void Run(const FInputActionValue& Value);
 	void StopRun();
+	void AimStarted(const FInputActionValue& Value);
+	void AimStopped(const FInputActionValue& Value);
+	void AttackPressed(const FInputActionValue& Value);
 	void ToggleInventory();
 	void Interact();
 	/** @param bShowEquipment 为 false 时仅显示背包（如搜刮容器），不创建/显示装备栏。 */
@@ -58,6 +61,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* RunAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* AimAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* AttackAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* InteractAction;

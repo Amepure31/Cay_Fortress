@@ -63,6 +63,16 @@ void AAlex_PlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AAlex_PlayerController::Jump);
 		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Run);
 		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::StopRun);
+		if (AimAction)
+		{
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AAlex_PlayerController::AimStarted);
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::AimStopped);
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &AAlex_PlayerController::AimStopped);
+		}
+		if (AttackAction)
+		{
+			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &AAlex_PlayerController::AttackPressed);
+		}
 		if (InteractAction)
 		{
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Interact);
@@ -127,8 +137,16 @@ void AAlex_PlayerController::Move(const FInputActionValue& Value)
 void AAlex_PlayerController::Look(const FInputActionValue& Value)
 {
 	FVector2D LookVector = Value.Get<FVector2D>();
-	AddYawInput(LookVector.X);
-	AddPitchInput(-LookVector.Y);
+	float Scale = 1.f;
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+	{
+		if (PlayerCharacter->IsAiming())
+		{
+			Scale = PlayerCharacter->AimLookSpeedScale;
+		}
+	}
+	AddYawInput(LookVector.X * Scale);
+	AddPitchInput(-LookVector.Y * Scale);
 }
 
 void AAlex_PlayerController::Jump()
@@ -141,23 +159,52 @@ void AAlex_PlayerController::Jump()
 
 void AAlex_PlayerController::Run(const FInputActionValue& Value)
 {
-	if (Value.Get<bool>() && GetCharacter())
+	if (!Value.Get<bool>())
 	{
-		if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
+		return;
+	}
+
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
+	{
+		PlayerCharacter->SetRunInputHeld(true);
+		if (PlayerCharacter->IsAiming())
 		{
-			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetRunSpeed());
+			return;
 		}
+		PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetRunSpeed());
 	}
 }
 
 void AAlex_PlayerController::StopRun()
 {
-	if (GetCharacter())
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
 	{
-		if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
-		{
-			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetMoveSpeed());
-		}
+		PlayerCharacter->SetRunInputHeld(false);
+		PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetMoveSpeed());
+	}
+}
+
+void AAlex_PlayerController::AimStarted(const FInputActionValue& Value)
+{
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->SetAiming(true);
+	}
+}
+
+void AAlex_PlayerController::AimStopped(const FInputActionValue& Value)
+{
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->SetAiming(false);
+	}
+}
+
+void AAlex_PlayerController::AttackPressed(const FInputActionValue& Value)
+{
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->TryAttack();
 	}
 }
 
