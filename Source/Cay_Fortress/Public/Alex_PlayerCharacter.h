@@ -13,6 +13,7 @@ class UInventoryComponent;
 class UEquipmentComponent;
 class UAnimMontage;
 class UInventoryItemInstance;
+class UAIPerceptionStimuliSourceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexAttackMontageFinished, bool, bInterrupted);
 
@@ -30,6 +31,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 	// 弹簧臂组件
@@ -48,9 +50,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	UEquipmentComponent* Equipment;
 
+	/** 供 AI Sight 感知注册为刺激源 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Perception", meta = (AllowPrivateAccess = "true"))
+	UAIPerceptionStimuliSourceComponent* AIPerceptionStimuliSource;
+
 	/** 瞄准时挂在角色网格手部插槽上的手枪外观（静态网格）；松开瞄准隐藏 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Aim", meta = (AllowPrivateAccess = "true"))
 	UStaticMeshComponent* AimPistolMeshComp;
+
+	/** 瞄准时步枪外观（与手枪互斥显示，逻辑同手枪） */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Aim", meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* AimRifleMeshComp;
 
 public:
 	/** 生命值 */
@@ -127,6 +137,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim", meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1"))
 	float PistolADSLayerBlendCap;
 
+	/**
+	 * 步枪风格武器（步枪 / SMG / 机枪）在 AnimBP 里叠 ADS Idle 时的最大权重 0~1；与手枪分开调。
+	 * 当前不驱动 Aim Offset，仅提供层权重供 Layered blend。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim", meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1"))
+	float RifleADSLayerBlendCap;
+
 	/** 瞄准时显示的手枪 StaticMesh（在蓝图或 C++ 子类上指定资源） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
 	TObjectPtr<UStaticMesh> AimPistolStaticMesh;
@@ -142,6 +159,21 @@ public:
 	/** 若为 true，仅当 ActiveWeaponSlot 装备为「手枪」类型时才显示 meshes；徒手瞄准则不显示 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
 	bool bShowAimPistolOnlyWhenPistolEquipped;
+
+	/** 瞄准时显示的步枪 StaticMesh（与手枪分开指定） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
+	TObjectPtr<UStaticMesh> AimRifleStaticMesh;
+
+	/** 步枪模型挂点（默认同右手插槽，可改为背枪等 Socket） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
+	FName AimRifleAttachSocketName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
+	FTransform AimRifleRelativeTransform;
+
+	/** 若为 true，仅当 ActiveWeaponSlot 为步枪/SMG/机枪（与 Anim 步枪 ADS 层一致）时才显示步枪模型 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Aim")
+	bool bShowAimRifleOnlyWhenRifleEquipped;
 
 	/** 当前是否处于瞄准（供 AnimInstance / Layer 混合） */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat|Aim")
@@ -180,7 +212,7 @@ public:
 	float MeleeMontageLeadInTrimSeconds;
 
 	/**
-	 * 挥拳（近战蒙太奇）播放期间短暂压低手枪 ADS Layer，避免 Layered blend 里 ADS 盖过 UpperBody_Attack 看起来像「瞄准时打不出拳」。
+	 * 挥拳（近战蒙太奇）播放期间短暂压低手枪/步枪 ADS 叠层权重（AnimInstance），避免 ADS 盖过 UpperBody_Attack。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Melee", meta = (ClampMin = "0", ClampMax = "2", UIMin = "0", UIMax = "2"))
 	float MeleePistolADSSuppressSeconds;
@@ -237,6 +269,8 @@ protected:
 
 	void LogAnimMontageSkeletonMismatches() const;
 	void UpdateAimPistolVisual();
+	void UpdateAimRifleVisual();
+	void UpdateAimWeaponVisuals();
 	void UpdateAimPresentation(float DeltaTime);
 	void HealStaleAttackMontageGuard(bool bLogIfHealed);
 	void HandleAttackMontageBlendOut(UAnimMontage* Montage, bool bInterrupted);
@@ -386,12 +420,22 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Weapon")
 	bool IsActiveWeaponPistol() const;
 
+	/**
+	 * ActiveWeaponSlot 上是否为「步枪风格」武器（步枪 / SMG / 机枪），用于 AnimBP 步枪 ADS Idle 层（无 AO）。
+	 * 与手枪互斥：同槽只会命中一种。
+	 */
+	UFUNCTION(BlueprintPure, Category = "Combat|Weapon")
+	bool IsActiveWeaponRifleStyleForAdsLayer() const;
+
 	/** AnimInstance：近战时是否在压制手枪 ADS 层 */
 	UFUNCTION(BlueprintPure, Category = "Combat|Melee")
 	float GetPistolADSMeleeSuppressRemain() const { return PistolADSMeleeSuppressRemain; }
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Aim")
 	float GetPistolADSLayerBlendCap() const { return PistolADSLayerBlendCap; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Aim")
+	float GetRifleADSLayerBlendCap() const { return RifleADSLayerBlendCap; }
 
 	/** 尝试播放攻击蒙太奇；瞄准时仅允许远程（开火蒙太奇），不播放近战。 */
 	UFUNCTION(BlueprintCallable, Category = "Combat")

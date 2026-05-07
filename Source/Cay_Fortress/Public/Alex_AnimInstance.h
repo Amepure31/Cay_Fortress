@@ -84,6 +84,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Aim", meta = (BlueprintThreadSafe))
 	float GetPistolADSLayerWeight_Bp() const;
 
+	/** 步枪风格武器 ADS Idle 层权重：瞄准 + 步枪/SMG/机枪且未近战压制时趋近 1；暂不接 Aim Offset */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Aim", meta = (BlueprintThreadSafe))
+	float GetRifleADSLayerWeight_Bp() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Character", meta = (BlueprintThreadSafe))
 	float GetLocomotionSpeedRatio_Bp() const;
 
@@ -145,6 +149,9 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Combat|Aim", meta = (Alias = "PistolADSLayerWeight_Bp", BlueprintGetter = "GetPistolADSLayerWeight_Bp"))
 	float PistolADSLayerWeight = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat|Aim", meta = (Alias = "RifleADSLayerWeight_Bp", BlueprintGetter = "GetRifleADSLayerWeight_Bp"))
+	float RifleADSLayerWeight = 0.f;
 
 	/**
 	 * 瞄准时上半身举枪准备度 0~1（C++ 侧插值）；可在 AnimBP 里驱动举枪过渡曲线。

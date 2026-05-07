@@ -20,7 +20,7 @@ static TAutoConsoleVariable<float> CVarAlexCombatAnimLogPeriod(
 static TAutoConsoleVariable<float> CVarAlexDebugAdsLayerMul(
 	TEXT("alex.DebugAdsLayerMul"),
 	1.f,
-	TEXT("Multiplies PistolADSLayerWeight and AimLayerBlendWeight after interp. Use 0 in PIE to confirm mesh explode is from pistol ADS layer."),
+	TEXT("Multiplies PistolADSLayerWeight, RifleADSLayerWeight, and AimLayerBlendWeight after interp. Use 0 in PIE to isolate ADS layers."),
 	ECVF_Default);
 
 /** 非 0 时 AimOffset 输出恒为 0（区分是 AO 资产还是 Alex_Pistol_Idle_ADS 序列） */
@@ -165,9 +165,13 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 			}
 
 			const bool bPistolEquipped = PlayerCharacter && PlayerCharacter->IsActiveWeaponPistol();
+			const bool bRifleStyleEquipped =
+				PlayerCharacter && PlayerCharacter->IsActiveWeaponRifleStyleForAdsLayer();
 			const bool bMeleeSuppADS = PlayerCharacter && PlayerCharacter->GetPistolADSMeleeSuppressRemain() > KINDA_SMALL_NUMBER;
 			const float PistolAdsCap =
 				PlayerCharacter ? FMath::Clamp(PlayerCharacter->GetPistolADSLayerBlendCap(), 0.f, 1.f) : 1.f;
+			const float RifleAdsCap =
+				PlayerCharacter ? FMath::Clamp(PlayerCharacter->GetRifleADSLayerBlendCap(), 0.f, 1.f) : 1.f;
 
 			// Aim Offset：手枪瞄准且未在近战「暂压 ADS」时才算（挥拳时让上半身回到 Slot/Locomotion）
 			float TargetAimPitch = 0.f;
@@ -219,6 +223,8 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 
 			const float PistolLayerGoal =
 				(bIsAiming && bPistolEquipped && !bMeleeSuppADS) ? PistolAdsCap : 0.f;
+			const float RifleLayerGoal =
+				(bIsAiming && bRifleStyleEquipped && !bMeleeSuppADS) ? RifleAdsCap : 0.f;
 			AimLayerBlendWeight = FMath::FInterpTo(
 				AimLayerBlendWeight,
 				PistolLayerGoal,
@@ -229,9 +235,15 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 				PistolLayerGoal,
 				DeltaTime,
 				AlexAnimInstanceCVars::AimLayerBlendInterpSpeed);
+			RifleADSLayerWeight = FMath::FInterpTo(
+				RifleADSLayerWeight,
+				RifleLayerGoal,
+				DeltaTime,
+				AlexAnimInstanceCVars::AimLayerBlendInterpSpeed);
 
 			const float AdsLayerMul = FMath::Clamp(CVarAlexDebugAdsLayerMul.GetValueOnGameThread(), 0.f, 1.f);
 			PistolADSLayerWeight *= AdsLayerMul;
+			RifleADSLayerWeight *= AdsLayerMul;
 			AimLayerBlendWeight *= AdsLayerMul;
 
 			if (CVarAlexDebugDisableAimOffset.GetValueOnGameThread() != 0)
@@ -247,16 +259,19 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 				if (DebugCombatAnimLogTimer >= AnimDiagPeriod)
 				{
 					DebugCombatAnimLogTimer = 0.f;
-					if (bIsAiming || PistolADSLayerWeight > 0.02f || AimLayerBlendWeight > 0.02f)
+					if (bIsAiming || PistolADSLayerWeight > 0.02f || RifleADSLayerWeight > 0.02f || AimLayerBlendWeight > 0.02f)
 					{
 						const FString Msg = FString::Printf(
-							TEXT("ANIM layer | %s | Aim=%d Pistol=%d SuppADS=%.2f AdsCap=%.2f | PistolW=%.2f AimLayerW=%.2f | Pitch=%.1f Yaw=%.1f | %s"),
+							TEXT("ANIM layer | %s | Aim=%d Pistol=%d RifleStyle=%d SuppADS=%.2f | PistolCap=%.2f RifleCap=%.2f | PistolW=%.2f RifleW=%.2f AimLayerW=%.2f | Pitch=%.1f Yaw=%.1f | %s"),
 							*GetNameSafe(Character),
 							bIsAiming ? 1 : 0,
 							bPistolEquipped ? 1 : 0,
+							bRifleStyleEquipped ? 1 : 0,
 							PlayerCharacter ? PlayerCharacter->GetPistolADSMeleeSuppressRemain() : 0.f,
 							PistolAdsCap,
+							RifleAdsCap,
 							PistolADSLayerWeight,
+							RifleADSLayerWeight,
 							AimLayerBlendWeight,
 							AimOffsetPitch,
 							AimOffsetYaw,
@@ -286,6 +301,7 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 			AimOffsetYaw = 0.f;
 			AimLayerBlendWeight = 0.f;
 			PistolADSLayerWeight = 0.f;
+			RifleADSLayerWeight = 0.f;
 		}
 	}
 	else
@@ -308,6 +324,7 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 		AimOffsetYaw = 0.f;
 		AimLayerBlendWeight = 0.f;
 		PistolADSLayerWeight = 0.f;
+		RifleADSLayerWeight = 0.f;
 	}
 }
 
@@ -471,4 +488,9 @@ float UAlex_AnimInstance::GetAimLayerBlendWeight_Bp() const
 float UAlex_AnimInstance::GetPistolADSLayerWeight_Bp() const
 {
 	return PistolADSLayerWeight;
+}
+
+float UAlex_AnimInstance::GetRifleADSLayerWeight_Bp() const
+{
+	return RifleADSLayerWeight;
 }

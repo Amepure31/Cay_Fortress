@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Alex_PlayerCharacter.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Sight.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -31,6 +33,12 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	// 创建装备组件
 	Equipment = CreateDefaultSubobject<UEquipmentComponent>(TEXT("Equipment"));
 
+	AIPerceptionStimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("AIPerceptionStimuliSource"));
+	if (AIPerceptionStimuliSource)
+	{
+		AIPerceptionStimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+	}
+
 	AimPistolAttachSocketName = TEXT("Weapon_R_Socket");
 	bShowAimPistolOnlyWhenPistolEquipped = true;
 	AimPistolRelativeTransform = FTransform::Identity;
@@ -45,6 +53,23 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 		if (USkeletalMeshComponent* SkelMesh = GetMesh())
 		{
 			AimPistolMeshComp->SetupAttachment(SkelMesh, AimPistolAttachSocketName);
+		}
+	}
+
+	AimRifleAttachSocketName = TEXT("Weapon_R_Socket");
+	bShowAimRifleOnlyWhenRifleEquipped = true;
+	AimRifleRelativeTransform = FTransform::Identity;
+
+	AimRifleMeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AimRifleVisual"));
+	if (AimRifleMeshComp)
+	{
+		AimRifleMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		AimRifleMeshComp->SetGenerateOverlapEvents(false);
+		AimRifleMeshComp->SetCanEverAffectNavigation(false);
+		AimRifleMeshComp->SetVisibility(false);
+		if (USkeletalMeshComponent* SkelMesh = GetMesh())
+		{
+			AimRifleMeshComp->SetupAttachment(SkelMesh, AimRifleAttachSocketName);
 		}
 	}
 
@@ -97,6 +122,7 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	bMeleeMontageDoNotStopAllMontages = true;
 	bRangedMontageDoNotStopAllMontages = true;
 	PistolADSLayerBlendCap = 1.f;
+	RifleADSLayerBlendCap = 1.f;
 	MeleePistolADSSuppressSeconds = 0.45f;
 	MeleeAttackCooldownSeconds = 0.5f;
 	MeleeMontageStartSectionName = NAME_None;
@@ -147,7 +173,35 @@ void AAlex_PlayerCharacter::BeginPlay()
 	}
 
 	LogAnimMontageSkeletonMismatches();
-	UpdateAimPistolVisual();
+	UpdateAimWeaponVisuals();
+}
+
+void AAlex_PlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (Equipment)
+	{
+		Equipment->OnEquipmentChanged.RemoveDynamic(this, &AAlex_PlayerCharacter::HandleEquipmentChanged);
+	}
+
+	if (USkeletalMeshComponent* SkelMesh = GetMesh())
+	{
+		if (UAnimInstance* AnimInst = SkelMesh->GetAnimInstance())
+		{
+			if (ActiveAttackMontageGuard)
+			{
+				FOnMontageEnded EmptyEndDelegate;
+				FOnMontageBlendingOutStarted EmptyBlendDelegate;
+				AnimInst->Montage_SetEndDelegate(EmptyEndDelegate, ActiveAttackMontageGuard.Get());
+				AnimInst->Montage_SetBlendingOutDelegate(EmptyBlendDelegate, ActiveAttackMontageGuard.Get());
+			}
+		}
+	}
+
+	ActiveAttackMontageGuard = nullptr;
+	bAttackMontagePlaying = false;
+	OnAttackMontageFinished.Clear();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AAlex_PlayerCharacter::UpdateAimPistolVisual()
@@ -176,6 +230,41 @@ void AAlex_PlayerCharacter::UpdateAimPistolVisual()
 	AimPistolMeshComp->SetStaticMesh(AimPistolStaticMesh);
 	AimPistolMeshComp->MarkRenderStateDirty();
 	AimPistolMeshComp->SetVisibility(true);
+}
+
+void AAlex_PlayerCharacter::UpdateAimRifleVisual()
+{
+	if (!AimRifleMeshComp || !GetMesh())
+	{
+		return;
+	}
+
+	const bool bHasMeshAsset = AimRifleStaticMesh != nullptr;
+	const bool bRifleOk =
+		!bShowAimRifleOnlyWhenRifleEquipped || IsActiveWeaponRifleStyleForAdsLayer();
+	const bool bWantShow = bIsAiming && bHasMeshAsset && bRifleOk;
+
+	if (!bWantShow)
+	{
+		AimRifleMeshComp->SetVisibility(false);
+		AimRifleMeshComp->SetStaticMesh(nullptr);
+		return;
+	}
+
+	AimRifleMeshComp->AttachToComponent(
+		GetMesh(),
+		FAttachmentTransformRules::SnapToTargetIncludingScale,
+		AimRifleAttachSocketName);
+	AimRifleMeshComp->SetRelativeTransform(AimRifleRelativeTransform);
+	AimRifleMeshComp->SetStaticMesh(AimRifleStaticMesh);
+	AimRifleMeshComp->MarkRenderStateDirty();
+	AimRifleMeshComp->SetVisibility(true);
+}
+
+void AAlex_PlayerCharacter::UpdateAimWeaponVisuals()
+{
+	UpdateAimPistolVisual();
+	UpdateAimRifleVisual();
 }
 
 void AAlex_PlayerCharacter::LogAnimMontageSkeletonMismatches() const
@@ -463,7 +552,7 @@ void AAlex_PlayerCharacter::SetAiming(bool bWantAim)
 		CayFortressCombatLog::NotifyScreen(*Msg, 0.f);
 	}
 
-	UpdateAimPistolVisual();
+	UpdateAimWeaponVisuals();
 }
 
 void AAlex_PlayerCharacter::UpdateAimPresentation(float DeltaTime)
@@ -519,6 +608,36 @@ bool AAlex_PlayerCharacter::IsActiveWeaponPistol() const
 	}
 
 	return Data.WeaponStats.WeaponClass == EWeaponClass::Pistol;
+}
+
+bool AAlex_PlayerCharacter::IsActiveWeaponRifleStyleForAdsLayer() const
+{
+	if (!Equipment)
+	{
+		return false;
+	}
+
+	const UInventoryItemInstance* Item = Equipment->GetEquippedItem(ActiveWeaponSlot);
+	if (!Item || !Item->ItemData)
+	{
+		return false;
+	}
+
+	const FInventoryItemData& Data = Item->ItemData->ItemData;
+	if (Data.ItemType != EInventoryItemType::Weapon)
+	{
+		return false;
+	}
+
+	switch (Data.WeaponStats.WeaponClass)
+	{
+	case EWeaponClass::Rifle:
+	case EWeaponClass::SMG:
+	case EWeaponClass::LMG:
+		return true;
+	default:
+		return false;
+	}
 }
 
 UAnimMontage* AAlex_PlayerCharacter::SelectRangedAttackMontage() const
