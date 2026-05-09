@@ -19,6 +19,11 @@ class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexAttackMontageFinished, bool, bInterrupted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexReloadMontageFinished, bool, bInterrupted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexHealthChanged, float, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexStaminaChanged, float, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexHungerChanged, float, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexHydrationChanged, float, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexCarryWeightChanged, float, CurrentWeight);
 
 UCLASS()
 class CAY_FORTRESS_API AAlex_PlayerCharacter : public ACharacter
@@ -66,6 +71,27 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "1", UIMin = "1"))
 	float MaxStamina;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
+	float Hunger;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "1", UIMin = "1"))
+	float MaxHunger;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats|Drain", meta = (ClampMin = "0", UIMin = "0"))
+	float HungerDrainRate;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
+	float Hydration;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "1", UIMin = "1"))
+	float MaxHydration;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats|Drain", meta = (ClampMin = "0", UIMin = "0"))
+	float HydrationDrainRate;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
+	float MaxCarryWeight;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0", ClampMax = "600", UIMin = "0", UIMax = "600"))
 	float MoveSpeed;
@@ -206,6 +232,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FOnAlexReloadMontageFinished OnReloadMontageFinished;
 
+	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
+	FOnAlexHealthChanged OnHealthChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
+	FOnAlexStaminaChanged OnStaminaChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
+	FOnAlexHungerChanged OnHungerChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
+	FOnAlexHydrationChanged OnHydrationChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
+	FOnAlexCarryWeightChanged OnCarryWeightChanged;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Movement")
 	float TargetMoveSpeed;
@@ -243,6 +284,7 @@ protected:
 	void HealStaleReloadMontageGuard(bool bLogIfHealed);
 	void HandleAttackMontageBlendOut(UAnimMontage* Montage, bool bInterrupted);
 	void ApplyAimMovementConstraints();
+	void TickStatDrainAndEncumbrance(float DeltaTime);
 	bool IsAdsRangedFullAutoEnabled() const;
 	float GetActiveWeaponFireRateShotsPerSecond() const;
 	float GetActiveWeaponRangedDamage() const;
@@ -308,6 +350,64 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
 	bool ConsumeStamina(float Amount);
+
+	// --- Hunger ---
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetHunger() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetMaxHunger() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetHungerPercent() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetHunger(float InHunger);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void RestoreHunger(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	bool ConsumeHunger(float Amount);
+
+	// --- Hydration ---
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetHydration() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetMaxHydration() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetHydrationPercent() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetHydration(float InHydration);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void RestoreHydration(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	bool ConsumeHydration(float Amount);
+
+	// --- Damage Reduction / Armor (pass-through) ---
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Character|Stats")
+	float GetTotalDamageReduction() const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Character|Stats")
+	float GetTotalArmorValue() const;
+
+	// --- Carry Weight ---
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetMaxCarryWeight() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetCurrentCarriedWeight() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	float GetCarryWeightPercent() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetMaxCarryWeight(float InMaxCarryWeight);
 
 	UFUNCTION(BlueprintCallable, Category = "Character|Movement")
 	float GetMoveSpeed() const;

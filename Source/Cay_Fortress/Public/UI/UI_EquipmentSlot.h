@@ -16,6 +16,8 @@ class UInventoryItemInstance;
 class UUI_Equipment;
 class UDragDropOperation;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnContainerBackpackRequested, UInventoryItemInstance*, ContainerItem);
+
 UCLASS()
 class CAY_FORTRESS_API UUI_EquipmentSlot : public UUserWidget
 {
@@ -61,6 +63,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI")
 	TObjectPtr<UImage> HoverOverlay;
 
+	/** 对容器背包槽位按 R 时广播（携带物品实例）；由装备面板或 PlayerController 处理打开 UI。 */
+	UPROPERTY(BlueprintAssignable, Category = "Equipment|Events")
+	FOnContainerBackpackRequested OnContainerBackpackRequested;
+
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void SetOwningEquipmentPanel(UUI_Equipment* InPanel) { OwningPanel = InPanel; }
 
@@ -75,6 +81,7 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;

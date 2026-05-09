@@ -113,6 +113,13 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	MaxHealth = 100.0f;
 	Stamina = 100.0f;
 	MaxStamina = 100.0f;
+	Hunger = 100.0f;
+	MaxHunger = 100.0f;
+	HungerDrainRate = 0.1f;
+	Hydration = 100.0f;
+	MaxHydration = 100.0f;
+	HydrationDrainRate = 0.15f;
+	MaxCarryWeight = 50.0f;
 	MoveSpeed = 350.0f;
 	RunSpeed = 600.0f;
 	SpeedTransitionTime = 0.3f;
@@ -223,6 +230,11 @@ void AAlex_PlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	bReloadMontagePlaying = false;
 	OnAttackMontageFinished.Clear();
 	OnReloadMontageFinished.Clear();
+	OnHealthChanged.Clear();
+	OnStaminaChanged.Clear();
+	OnHungerChanged.Clear();
+	OnHydrationChanged.Clear();
+	OnCarryWeightChanged.Clear();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -334,20 +346,30 @@ UInventoryComponent* AAlex_PlayerCharacter::GetInventory() const
 float AAlex_PlayerCharacter::GetHealth() const { return Health; }
 float AAlex_PlayerCharacter::GetMaxHealth() const { return MaxHealth; }
 float AAlex_PlayerCharacter::GetHealthPercent() const { return MaxHealth > 0.0f ? (Health / MaxHealth) : 0.0f; }
-void AAlex_PlayerCharacter::SetHealth(float InHealth) { Health = FMath::Clamp(InHealth, 0.0f, MaxHealth); }
-void AAlex_PlayerCharacter::Heal(float Amount) { if (Amount > 0.0f) Health = FMath::Clamp(Health + Amount, 0.0f, MaxHealth); }
+
+void AAlex_PlayerCharacter::SetHealth(float InHealth)
+{
+	const float Old = Health;
+	Health = FMath::Clamp(InHealth, 0.0f, MaxHealth);
+	if (!FMath::IsNearlyEqual(Old, Health))
+		OnHealthChanged.Broadcast(Health);
+}
+
+void AAlex_PlayerCharacter::Heal(float Amount)
+{
+	if (Amount > 0.0f) SetHealth(Health + Amount);
+}
 
 float AAlex_PlayerCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	if (Damage > 0.0f)
 	{
-		float FinalDamage = Damage;
-		if (Equipment)
-		{
-			const float Reduction = Equipment->GetTotalDamageReduction();
-			FinalDamage = Damage * (1.0f - Reduction);
-		}
-		Health = FMath::Clamp(Health - FinalDamage, 0.0f, MaxHealth);
+		const float ArmorVal = Equipment ? Equipment->GetTotalArmorValue() : 0.0f;
+		const float DamageReduction = Equipment ? Equipment->GetTotalDamageReduction() : 0.0f;
+		const float ArmorPct = (ArmorVal > KINDA_SMALL_NUMBER) ? (ArmorVal / (ArmorVal + 100.0f)) : 0.0f;
+		const float TotalReduction = FMath::Min(ArmorPct + DamageReduction, 0.9f);
+		const float FinalDamage = Damage * (1.0f - TotalReduction);
+		SetHealth(Health - FinalDamage);
 	}
 	return Damage;
 }
@@ -355,9 +377,118 @@ float AAlex_PlayerCharacter::TakeDamage(float Damage, const FDamageEvent& Damage
 float AAlex_PlayerCharacter::GetStamina() const { return Stamina; }
 float AAlex_PlayerCharacter::GetMaxStamina() const { return MaxStamina; }
 float AAlex_PlayerCharacter::GetStaminaPercent() const { return MaxStamina > 0.0f ? (Stamina / MaxStamina) : 0.0f; }
-void AAlex_PlayerCharacter::SetStamina(float InStamina) { Stamina = FMath::Clamp(InStamina, 0.0f, MaxStamina); }
-void AAlex_PlayerCharacter::RecoverStamina(float Amount) { if (Amount > 0.0f) Stamina = FMath::Clamp(Stamina + Amount, 0.0f, MaxStamina); }
-bool AAlex_PlayerCharacter::ConsumeStamina(float Amount) { if (Amount > 0.0f && Stamina >= Amount) { Stamina -= Amount; return true; } return false; }
+
+void AAlex_PlayerCharacter::SetStamina(float InStamina)
+{
+	const float Old = Stamina;
+	Stamina = FMath::Clamp(InStamina, 0.0f, MaxStamina);
+	if (!FMath::IsNearlyEqual(Old, Stamina))
+		OnStaminaChanged.Broadcast(Stamina);
+}
+
+void AAlex_PlayerCharacter::RecoverStamina(float Amount)
+{
+	if (Amount > 0.0f) SetStamina(Stamina + Amount);
+}
+
+bool AAlex_PlayerCharacter::ConsumeStamina(float Amount)
+{
+	if (Amount > 0.0f && Stamina >= Amount)
+	{
+		SetStamina(Stamina - Amount);
+		return true;
+	}
+	return false;
+}
+
+// --- Hunger ---
+float AAlex_PlayerCharacter::GetHunger() const { return Hunger; }
+float AAlex_PlayerCharacter::GetMaxHunger() const { return MaxHunger; }
+float AAlex_PlayerCharacter::GetHungerPercent() const { return MaxHunger > 0.0f ? (Hunger / MaxHunger) : 0.0f; }
+
+void AAlex_PlayerCharacter::SetHunger(float InHunger)
+{
+	const float Old = Hunger;
+	Hunger = FMath::Clamp(InHunger, 0.0f, MaxHunger);
+	if (!FMath::IsNearlyEqual(Old, Hunger))
+		OnHungerChanged.Broadcast(Hunger);
+}
+
+void AAlex_PlayerCharacter::RestoreHunger(float Amount)
+{
+	if (Amount > 0.0f) SetHunger(Hunger + Amount);
+}
+
+bool AAlex_PlayerCharacter::ConsumeHunger(float Amount)
+{
+	if (Amount > 0.0f && Hunger >= Amount)
+	{
+		SetHunger(Hunger - Amount);
+		return true;
+	}
+	return false;
+}
+
+// --- Hydration ---
+float AAlex_PlayerCharacter::GetHydration() const { return Hydration; }
+float AAlex_PlayerCharacter::GetMaxHydration() const { return MaxHydration; }
+float AAlex_PlayerCharacter::GetHydrationPercent() const { return MaxHydration > 0.0f ? (Hydration / MaxHydration) : 0.0f; }
+
+void AAlex_PlayerCharacter::SetHydration(float InHydration)
+{
+	const float Old = Hydration;
+	Hydration = FMath::Clamp(InHydration, 0.0f, MaxHydration);
+	if (!FMath::IsNearlyEqual(Old, Hydration))
+		OnHydrationChanged.Broadcast(Hydration);
+}
+
+void AAlex_PlayerCharacter::RestoreHydration(float Amount)
+{
+	if (Amount > 0.0f) SetHydration(Hydration + Amount);
+}
+
+bool AAlex_PlayerCharacter::ConsumeHydration(float Amount)
+{
+	if (Amount > 0.0f && Hydration >= Amount)
+	{
+		SetHydration(Hydration - Amount);
+		return true;
+	}
+	return false;
+}
+
+// --- Damage Reduction / Armor (pass-through) ---
+float AAlex_PlayerCharacter::GetTotalDamageReduction() const
+{
+	return Equipment ? Equipment->GetTotalDamageReduction() : 0.0f;
+}
+
+float AAlex_PlayerCharacter::GetTotalArmorValue() const
+{
+	return Equipment ? Equipment->GetTotalArmorValue() : 0.0f;
+}
+
+// --- Carry Weight ---
+float AAlex_PlayerCharacter::GetMaxCarryWeight() const { return MaxCarryWeight; }
+
+float AAlex_PlayerCharacter::GetCurrentCarriedWeight() const
+{
+	const UInventoryComponent* Inv = GetInventory();
+	const float BagWeight = Inv ? Inv->GetTotalCarriedWeight() : 0.0f;
+	const float EquippedWeight = Equipment ? Equipment->GetTotalEquippedWeight() : 0.0f;
+	return BagWeight + EquippedWeight;
+}
+
+float AAlex_PlayerCharacter::GetCarryWeightPercent() const
+{
+	if (MaxCarryWeight <= 0.0f) return 0.0f;
+	return GetCurrentCarriedWeight() / MaxCarryWeight;
+}
+
+void AAlex_PlayerCharacter::SetMaxCarryWeight(float InMaxCarryWeight)
+{
+	MaxCarryWeight = FMath::Max(0.0f, InMaxCarryWeight);
+}
 
 float AAlex_PlayerCharacter::GetMoveSpeed() const { return MoveSpeed; }
 void AAlex_PlayerCharacter::SetMoveSpeed(float InMoveSpeed) { MoveSpeed = FMath::Clamp(InMoveSpeed, 0.0f, 600.0f); if (GetCharacterMovement()) GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
@@ -375,6 +506,7 @@ void AAlex_PlayerCharacter::Tick(float DeltaTime)
 		CurrentMoveSpeed = TargetMoveSpeed;
 
 	ApplyAimMovementConstraints();
+	TickStatDrainAndEncumbrance(DeltaTime);
 	if (GetCharacterMovement()) GetCharacterMovement()->MaxWalkSpeed = CurrentMoveSpeed;
 
 	UpdateAimPresentation(DeltaTime);
@@ -1036,6 +1168,45 @@ void AAlex_PlayerCharacter::HandleReloadMontageEnded(UAnimMontage* Montage, bool
 	if (!bInterrupted) ApplyReloadFillFromInventory();
 	UpdateAimWeaponVisuals();
 	OnReloadMontageFinished.Broadcast(bInterrupted);
+}
+
+void AAlex_PlayerCharacter::TickStatDrainAndEncumbrance(float DeltaTime)
+{
+	// --- Hunger / Hydration passive drain ---
+	if (HungerDrainRate > 0.0f)
+		SetHunger(Hunger - HungerDrainRate * DeltaTime);
+	if (HydrationDrainRate > 0.0f)
+		SetHydration(Hydration - HydrationDrainRate * DeltaTime);
+
+	// --- Starvation / Dehydration health drain ---
+	if (Hunger <= 0.0f)
+		SetHealth(Health - 1.0f * DeltaTime);
+	if (Hydration <= 0.0f)
+		SetHealth(Health - 2.0f * DeltaTime);
+
+	// --- Encumbrance ---
+	const float CarriedWeight = GetCurrentCarriedWeight();
+	const float WeightRatio = (MaxCarryWeight > KINDA_SMALL_NUMBER) ? (CarriedWeight / MaxCarryWeight) : 0.0f;
+
+	// Broadcast carry weight change if significant
+	static float LastBroadcastWeight = -1.0f;
+	if (!FMath::IsNearlyEqual(LastBroadcastWeight, CarriedWeight, 0.1f))
+	{
+		LastBroadcastWeight = CarriedWeight;
+		OnCarryWeightChanged.Broadcast(CarriedWeight);
+	}
+
+	if (WeightRatio > 1.0f)
+	{
+		// Over 100%: cannot move
+		TargetMoveSpeed = 0.0f;
+		CurrentMoveSpeed = 0.0f;
+	}
+	else if (WeightRatio > 0.5f && bRunInputHeld)
+	{
+		// Over 50%: cannot run, force walk speed
+		TargetMoveSpeed = FMath::Min(TargetMoveSpeed, MoveSpeed);
+	}
 }
 
 void AAlex_PlayerCharacter::HandleEquipmentChanged(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem)

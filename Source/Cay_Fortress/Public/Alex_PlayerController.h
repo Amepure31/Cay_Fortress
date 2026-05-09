@@ -62,6 +62,8 @@ private:
 	void EnsureEquipmentUIVisibleWithInventory();
 	void OpenLootContainerUI(ALootContainerActor* LootContainer);
 	void CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction);
+	void OpenContainerBackpackUI(UInventoryItemInstance* ContainerItem);
+	void CloseContainerBackpackUI(bool bCloseInventoryIfOpenedByContainerBackpack);
 
 protected:
 	UFUNCTION()
@@ -72,6 +74,12 @@ protected:
 
 	UFUNCTION()
 	void OnEquipmentAmmoRefresh(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem);
+
+	UFUNCTION()
+	void OnContainerOpenRequested(UInventoryItemInstance* ContainerItem);
+
+	UFUNCTION()
+	void OnContainerBackpackRequestedFromEquipment(UInventoryItemInstance* ContainerItem);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputMappingContext* DefaultMappingContext;
@@ -123,6 +131,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|UI", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> AmmoHudWidgetClass;
 
+	/** 角色属性 HUD（须继承 UUI_CharacterProperty）；未指定则不创建 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|UI", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> CharacterPropertyWidgetClass;
+
+	/** 容器背包 Widget 类（须继承 UUI_ContainerBackpack）；未指定则不创建 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> ContainerBackpackWidgetClass;
+
 	UPROPERTY()
 	UUserWidget* InventoryWidget;
 
@@ -146,6 +162,18 @@ protected:
 
 	UPROPERTY()
 	UUserWidget* AmmoHudWidget;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> CharacterPropertyWidget;
+
+	UPROPERTY()
+	UUserWidget* ContainerBackpackWidget;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UInventoryItemInstance> ActiveContainerBackpackItem;
+
+	bool bContainerBackpackActive;
+	bool bInventoryOpenedByContainerBackpack;
 
 	UPROPERTY(Transient)
 	int32 AccumulatedHitCount = 0;
@@ -180,8 +208,11 @@ protected:
 	float LastToggleTime;
 	bool bToggleCooldown;
 
+	float UIUpdateThrottle;
+
 	void EnsureAimPointWidgetCreated();
 	void EnsureAmmoHudWidgetCreated();
+	void EnsureCharacterPropertyWidgetCreated();
 	void DrawDebugAccumulatedHitCount() const;
 
 	void AttachToPawnInventoryAndEquipment(APawn* InPawn);

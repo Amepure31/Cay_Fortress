@@ -199,11 +199,36 @@ struct CAY_FORTRESS_API FArmorItemStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor", meta = (DisplayName = "噪音系数", ClampMin = "0.0", UIMin = "0.0"))
 	float NoiseFactor;
 
+	/** 是否为容器（勾选后可作为独立容器打开） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor|Container", meta = (DisplayName = "是否为容器"))
+	bool bIsContainer;
+
+	/** 容器额外提供的背包宽度（格子数），仅在 bIsContainer 为 true 时生效 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor|Container", meta = (DisplayName = "容器宽度", ClampMin = "0", UIMin = "0", EditCondition = "bIsContainer", EditConditionHides))
+	int32 ContainerGridWidth;
+
+	/** 容器额外提供的背包高度（格子数），仅在 bIsContainer 为 true 时生效 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor|Container", meta = (DisplayName = "容器高度", ClampMin = "0", UIMin = "0", EditCondition = "bIsContainer", EditConditionHides))
+	int32 ContainerGridHeight;
+
+	/** 穿戴减重比例：装备后自身重量乘以此系数计入负重（1=不减重，0.2=减重80%） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor|Weight", meta = (DisplayName = "穿戴减重比例", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float WearWeightReductionRatio;
+
+	/** 容器减重比例：容器内物品重量乘以此系数计入负重，仅在 bIsContainer 为 true 时生效 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Armor|Container", meta = (DisplayName = "容器减重比例", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0", EditCondition = "bIsContainer", EditConditionHides))
+	float ContainerWeightReductionRatio;
+
 	FArmorItemStats()
 		: EquipSlot(EArmorEquipSlot::Chest)
 		, ArmorValue(25.0f)
 		, DamageReductionRatio(0.15f)
 		, NoiseFactor(1.0f)
+		, bIsContainer(false)
+		, ContainerGridWidth(0)
+		, ContainerGridHeight(0)
+		, WearWeightReductionRatio(1.0f)
+		, ContainerWeightReductionRatio(1.0f)
 	{
 	}
 };

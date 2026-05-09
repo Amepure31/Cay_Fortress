@@ -19,6 +19,7 @@ class UDragDropOperation;
 class USizeBox;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnItemSlotClicked, UUI_ItemSlot*, ItemSlot);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnContainerOpenRequested, UInventoryItemInstance*, ContainerItem);
 
 UCLASS()
 class CAY_FORTRESS_API UUI_Inventory : public UUI_Base_Class
@@ -68,6 +69,10 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Events")
 	FOnItemSlotClicked OnItemSlotClicked;
 
+	/** 悬停容器背包物品时按 R 广播 */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FOnContainerOpenRequested OnContainerOpenRequested;
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void BindInventory(UInventoryComponent* InInventory);
 
@@ -76,6 +81,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	UInventoryComponent* GetBoundInventory() const { return BoundInventory; }
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory")
+	class UInventoryItemInstance* GetHoveredItemInstance() const { return HoveredItemInstance; }
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void CloseInventory();

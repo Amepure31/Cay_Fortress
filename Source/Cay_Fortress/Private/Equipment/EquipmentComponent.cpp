@@ -88,6 +88,14 @@ bool UEquipmentComponent::EquipItemFromInventory(UInventoryComponent* SourceInve
 	SlotEntry->EquippedItem = Item;
 
 	OnEquipmentChanged.Broadcast(Slot, Item);
+
+	// Initialize container backpack inventory if this is a container armor item
+	if (Item->ItemData && Item->ItemData->ItemData.ArmorStats.bIsContainer)
+	{
+		const FArmorItemStats& AS = Item->ItemData->ItemData.ArmorStats;
+		Item->EnsureContainerInventory(AS.ContainerGridWidth, AS.ContainerGridHeight);
+	}
+
 	return true;
 }
 
@@ -155,6 +163,27 @@ float UEquipmentComponent::GetTotalArmorValue() const
 			continue;
 		}
 		Total += Entry.EquippedItem->ItemData->ItemData.ArmorStats.ArmorValue;
+	}
+	return Total;
+}
+
+float UEquipmentComponent::GetTotalEquippedWeight() const
+{
+	float Total = 0.0f;
+	for (const FEquipmentSlotEntry& Entry : Slots)
+	{
+		if (!Entry.EquippedItem || !Entry.EquippedItem->ItemData)
+			continue;
+		const float ItemWeight = Entry.EquippedItem->ItemData->ItemData.Weight * FMath::Max(0, Entry.EquippedItem->StackSize);
+		if (IsArmorSlot(Entry.SlotType))
+		{
+			const FArmorItemStats& ArmorStats = Entry.EquippedItem->ItemData->ItemData.ArmorStats;
+			Total += ItemWeight * ArmorStats.WearWeightReductionRatio;
+			if (ArmorStats.bIsContainer && Entry.EquippedItem->ContainerInventory)
+				Total += Entry.EquippedItem->ContainerInventory->GetTotalCarriedWeight() * ArmorStats.ContainerWeightReductionRatio;
+		}
+		else
+			Total += ItemWeight;
 	}
 	return Total;
 }

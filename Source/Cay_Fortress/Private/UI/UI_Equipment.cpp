@@ -149,6 +149,7 @@ void UUI_Equipment::CreateSlots()
 		Pair.Widget->SetOwningEquipmentPanel(this);
 		SlotWidgets.Add(Pair.Widget);
 		Pair.Widget->ApplySlotChromeAndSize();
+		Pair.Widget->OnContainerBackpackRequested.AddDynamic(this, &UUI_Equipment::OnContainerBackpackSlotRequested);
 	}
 
 	if (BoundCount == 0)
@@ -174,6 +175,7 @@ void UUI_Equipment::CreateSlots()
 				SlotWidget->SetOwningEquipmentPanel(this);
 				SlotWidgets.Add(SlotWidget);
 				SlotWidget->ApplySlotChromeAndSize();
+				SlotWidget->OnContainerBackpackRequested.AddDynamic(this, &UUI_Equipment::OnContainerBackpackSlotRequested);
 				++BoundCount;
 			}
 		}
@@ -248,4 +250,9 @@ bool UUI_Equipment::TryEquipFromDrag(UUI_ItemWidget* SourceWidget, EEquipmentSlo
 void UUI_Equipment::OnEquipmentChanged(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem)
 {
 	RefreshAllSlots();
+}
+
+void UUI_Equipment::OnContainerBackpackSlotRequested(UInventoryItemInstance* ContainerItem)
+{
+	OnContainerBackpackRequested.Broadcast(ContainerItem);
 }

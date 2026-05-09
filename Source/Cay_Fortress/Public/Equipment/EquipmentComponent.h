@@ -56,6 +56,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	float GetTotalArmorValue() const;
 
+	/** 聚合所有已装备物品计入负重的总重量（护甲自身重量 * 穿戴减重比例 + 武器全重） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
+	float GetTotalEquippedWeight() const;
+
 protected:
 	virtual void BeginPlay() override;
 

@@ -397,6 +397,22 @@ void UUI_EquipmentSlot::RefreshSlotVisual()
 	}
 }
 
+FReply UUI_EquipmentSlot::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::R && OwningPanel)
+	{
+		UEquipmentComponent* EqComp = OwningPanel->GetBoundEquipment();
+		UInventoryItemInstance* EquippedItem = EqComp ? EqComp->GetEquippedItem(SlotType) : nullptr;
+		if (EquippedItem && EquippedItem->ItemData
+			&& EquippedItem->ItemData->ItemData.ArmorStats.bIsContainer)
+		{
+			OnContainerBackpackRequested.Broadcast(EquippedItem);
+			return FReply::Handled();
+		}
+	}
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
 FReply UUI_EquipmentSlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)

@@ -71,6 +71,13 @@ public:
 	UPROPERTY()
 	int32 WeaponMagazineAmmo;
 
+	/** 容器背包内的物品网格（仅当 ItemData.ArmorStats.bIsContainer 为 true 时延迟创建）。物品实例被 GC 时一并回收。 */
+	UPROPERTY()
+	TObjectPtr<class UInventoryComponent> ContainerInventory;
+
+	/** 确保容器背包网格存在并以指定尺寸初始化（非容器物品为 no-op） */
+	void EnsureContainerInventory(int32 InGridWidth, int32 InGridHeight);
+
 	UInventoryItemInstance()
 		: ItemData(nullptr)
 		, StackSize(1)
@@ -84,6 +91,7 @@ public:
 		, BindTime(FDateTime::MinValue())
 		, bIsBound(false)
 		, WeaponMagazineAmmo(0)
+		, ContainerInventory(nullptr)
 	{
 	}
 

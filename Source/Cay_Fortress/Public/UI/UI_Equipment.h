@@ -3,12 +3,14 @@
 #include "CoreMinimal.h"
 #include "UI/UI_Base_Class.h"
 #include "Equipment/EquipmentTypes.h"
+#include "UI/UI_EquipmentSlot.h"
 #include "UI_Equipment.generated.h"
 
 class UEquipmentComponent;
 class UInventoryComponent;
 class UUI_EquipmentSlot;
 class UUI_ItemWidget;
+class UInventoryItemInstance;
 class UUI_Inventory;
 
 UCLASS()
@@ -66,6 +68,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	UInventoryComponent* GetPlayerInventory() const { return PlayerInventory; }
 
+	/** 装备槽中有容器背包物品时按 R 广播 */
+	UPROPERTY(BlueprintAssignable, Category = "Equipment|Events")
+	FOnContainerBackpackRequested OnContainerBackpackRequested;
+
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void UnequipSlot(EEquipmentSlotType TargetEquipmentSlot);
 
@@ -96,6 +102,9 @@ private:
 
 	UFUNCTION()
 	void OnEquipmentChanged(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem);
+
+	UFUNCTION()
+	void OnContainerBackpackSlotRequested(UInventoryItemInstance* ContainerItem);
 
 	void CreateSlots();
 };

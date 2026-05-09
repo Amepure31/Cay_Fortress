@@ -16,6 +16,10 @@
 #include "Equipment/EquipmentComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/UI_AimPoint.h"
+#include "UI/UI_CharacterProperty.h"
+#include "UI/UI_ContainerBackpack.h"
+#include "Inventory/FInventoryItemInstance.h"
+#include "Inventory/InventoryItemDataAsset.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
@@ -32,6 +36,10 @@ AAlex_PlayerController::AAlex_PlayerController()
 	bInventoryOpenedByLootInteraction = false;
 	bIsToggling = false;
 	LastToggleTime = 0.0f;
+	ContainerBackpackWidget = nullptr;
+	bContainerBackpackActive = false;
+	bInventoryOpenedByContainerBackpack = false;
+	UIUpdateThrottle = 0.f;
 	bToggleCooldown = false;
 }
 
@@ -91,7 +99,7 @@ void AAlex_PlayerController::SetupInputComponent()
 		if (ReloadAction)
 			EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ReloadPressed);
 	}
-}
+	}
 
 void AAlex_PlayerController::Tick(float DeltaSeconds)
 {
@@ -99,11 +107,22 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 
 	DrawDebugAccumulatedHitCount();
 
-	if (UUI_AimPoint* AimPoint = Cast<UUI_AimPoint>(AimPointWidget.Get()))
-		AimPoint->RefreshAimDisplay();
+	// Throttle UI refresh to ~10 Hz
+	UIUpdateThrottle += DeltaSeconds;
+	constexpr float UIUpdateInterval = 0.1f;
+	if (UIUpdateThrottle >= UIUpdateInterval)
+	{
+		UIUpdateThrottle = 0.f;
 
-	if (UUI_AmmoHUD* AmmoHud = Cast<UUI_AmmoHUD>(AmmoHudWidget))
-		AmmoHud->RefreshAmmoDisplay();
+		if (UUI_AimPoint* AimPoint = Cast<UUI_AimPoint>(AimPointWidget.Get()))
+			AimPoint->RefreshAimDisplay();
+
+		if (UUI_AmmoHUD* AmmoHud = Cast<UUI_AmmoHUD>(AmmoHudWidget))
+			AmmoHud->RefreshAmmoDisplay();
+
+		if (UUI_CharacterProperty* CharProp = Cast<UUI_CharacterProperty>(CharacterPropertyWidget.Get()))
+			CharProp->RefreshStatusDisplay();
+	}
 
 	if (!bLootInteractionActive) return;
 
@@ -198,10 +217,13 @@ void AAlex_PlayerController::AttackReleased(const FInputActionValue& Value)
 
 void AAlex_PlayerController::ReloadPressed(const FInputActionValue& Value)
 {
+	// OnRKeyPressed handles R when UI is open
 	if (bShowMouseCursor) return;
+
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 		PlayerCharacter->TryReload();
 }
+
 
 void AAlex_PlayerController::AddAccumulatedHitCount(const int32 Delta)
 {
@@ -238,7 +260,42 @@ void AAlex_PlayerController::DrawDebugAccumulatedHitCount() const
 void AAlex_PlayerController::Interact()
 {
 	if (bLootInteractionActive) { CloseLootContainerUI(true); return; }
-	if (bShowMouseCursor) return;
+
+	// When UI is open, Interact key opens/closes container backpacks
+	if (bShowMouseCursor)
+	{
+		// Close container if open
+		if (bContainerBackpackActive)
+		{
+			CloseContainerBackpackUI(true);
+			return;
+		}
+
+		// Try to find a container item to open
+		UInventoryItemInstance* ContainerItem = nullptr;
+		if (UUI_Inventory* InvUI = Cast<UUI_Inventory>(InventoryWidget))
+			ContainerItem = InvUI->GetHoveredItemInstance();
+		if (!ContainerItem)
+		{
+			if (UUI_ContainerBackpack* CUI = Cast<UUI_ContainerBackpack>(ContainerBackpackWidget))
+				ContainerItem = CUI->GetHoveredItemInstance();
+		}
+		if (!ContainerItem && EquipmentComponent)
+		{
+			static const EEquipmentSlotType Slots[] = {EEquipmentSlotType::Head, EEquipmentSlotType::Chest, EEquipmentSlotType::Backpack};
+			for (const EEquipmentSlotType S : Slots)
+			{
+				UInventoryItemInstance* Eq = EquipmentComponent->GetEquippedItem(S);
+				if (Eq && Eq->ItemData && Eq->ItemData->ItemData.ArmorStats.bIsContainer)
+					{ ContainerItem = Eq; break; }
+			}
+		}
+		if (ContainerItem)
+		{
+			OnContainerOpenRequested(ContainerItem);
+		}
+		return;
+	}
 
 	if (!PlayerInteractComponent)
 	{
@@ -371,6 +428,9 @@ void AAlex_PlayerController::ToggleInventory()
 {
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 	if (bToggleCooldown && CurrentTime - LastToggleTime < 0.5f) return;
+	ContainerBackpackWidget = nullptr;
+	bContainerBackpackActive = false;
+	bInventoryOpenedByContainerBackpack = false;
 	bToggleCooldown = false;
 	if (bIsToggling) return;
 	if (!InventoryComponent) return;
@@ -519,4 +579,122 @@ void AAlex_PlayerController::OnInventoryAmmoRefresh()
 void AAlex_PlayerController::OnEquipmentAmmoRefresh(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem)
 {
 	OnInventoryAmmoRefresh();
+}
+
+void AAlex_PlayerController::OnContainerOpenRequested(UInventoryItemInstance* ContainerItem)
+{
+	if (!ContainerItem) return;
+	if (bContainerBackpackActive && ActiveContainerBackpackItem.Get() == ContainerItem)
+	{
+		CloseContainerBackpackUI(true);
+		return;
+	}
+	if (bContainerBackpackActive)
+		CloseContainerBackpackUI(false);
+	OpenContainerBackpackUI(ContainerItem);
+}
+
+void AAlex_PlayerController::OnContainerBackpackRequestedFromEquipment(UInventoryItemInstance* ContainerItem)
+{
+	OnContainerOpenRequested(ContainerItem);
+}
+
+void AAlex_PlayerController::OpenContainerBackpackUI(UInventoryItemInstance* ContainerItem)
+{
+	if (!ContainerItem || !ContainerBackpackWidgetClass || !ContainerItem->ItemData)
+		return;
+	const FArmorItemStats& ArmorStats = ContainerItem->ItemData->ItemData.ArmorStats;
+	if (!ArmorStats.bIsContainer)
+		return;
+
+	ContainerItem->EnsureContainerInventory(ArmorStats.ContainerGridWidth, ArmorStats.ContainerGridHeight);
+
+	const bool bInventoryWasOpen = InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bContainerBackpackActive = true;
+	ActiveContainerBackpackItem = ContainerItem;
+	bInventoryOpenedByContainerBackpack = !bInventoryWasOpen;
+
+	if (!EnsureInventoryUIVisible(true))
+	{
+		bContainerBackpackActive = false;
+		ActiveContainerBackpackItem = nullptr;
+		bInventoryOpenedByContainerBackpack = false;
+		return;
+	}
+
+	if (!ContainerBackpackWidget)
+		ContainerBackpackWidget = CreateWidget<UUserWidget>(this, ContainerBackpackWidgetClass);
+	if (!ContainerBackpackWidget)
+	{
+		bContainerBackpackActive = false;
+		ActiveContainerBackpackItem = nullptr;
+		bInventoryOpenedByContainerBackpack = false;
+		return;
+	}
+
+	if (UUI_ContainerBackpack* ContainerUI = Cast<UUI_ContainerBackpack>(ContainerBackpackWidget))
+	{
+		ContainerUI->BindContainerBackpack(ContainerItem);
+		ContainerUI->UpdateInventory();
+	}
+
+	if (!ContainerBackpackWidget->IsInViewport())
+		ContainerBackpackWidget->AddToViewport();
+	ContainerBackpackWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(ContainerBackpackWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	SetIgnoreLookInput(true);
+}
+
+void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpenedByContainerBackpack)
+{
+	// Guard against recursive calls (e.g. from OnInventoryToggled)
+	if (!bContainerBackpackActive) return;
+
+	ActiveContainerBackpackItem = nullptr;
+	bContainerBackpackActive = false;
+
+	if (ContainerBackpackWidget)
+	{
+		ContainerBackpackWidget->RemoveFromParent();
+		ContainerBackpackWidget = nullptr;
+	}
+
+	const bool bShouldCloseInventory = bCloseInventoryIfOpenedByContainerBackpack
+		&& bInventoryOpenedByContainerBackpack
+		&& InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bInventoryOpenedByContainerBackpack = false;
+
+	if (bShouldCloseInventory)
+	{
+		InventoryComponent->CloseInventory();
+		FInputModeGameOnly InputMode;
+		SetInputMode(InputMode);
+		bShowMouseCursor = false;
+		SetIgnoreLookInput(false);
+		return;
+	}
+
+	if (InventoryComponent && InventoryComponent->IsInventoryOpen() && InventoryWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(InventoryWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
+		SetIgnoreLookInput(true);
+		EnsureEquipmentUIVisibleWithInventory();
+		return;
+	}
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+	bShowMouseCursor = false;
+	SetIgnoreLookInput(false);
 }

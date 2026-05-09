@@ -174,6 +174,7 @@ void UInventoryComponent::ToggleInventory() { bIsInventoryOpen = !bIsInventoryOp
 UInventoryItemInstance* UInventoryComponent::TryAddItemReturningInstance(class UInventoryItemDataAsset* ItemData, int32 StackSize)
 {
 	if (!ItemData) return nullptr;
+	if (bRejectContainerItems && ItemData->ItemData.ArmorStats.bIsContainer) return nullptr;
 	const FInventoryItemData& Data = ItemData->ItemData;
 
 	if (Data.bCanStack)
@@ -230,6 +231,7 @@ class UInventoryItemInstance* UInventoryComponent::AddItemWithShapeAtPosition(
 	int32 Durability, int32 MaxDurability, bool bIsBound, FDateTime BindTime)
 {
 	if (!ItemData) return nullptr;
+	if (bRejectContainerItems && ItemData->ItemData.ArmorStats.bIsContainer) return nullptr;
 	const int32 SafeWidth = FMath::Max(1, Width);
 	const int32 SafeHeight = FMath::Max(1, Height);
 	if (!IsSpaceAvailable(SafeWidth, SafeHeight, ShapeMask, SlotX, SlotY)) return nullptr;
@@ -462,6 +464,17 @@ int32 UInventoryComponent::ConsumeAmmoFromInventoryByType(const EAmmoType Type, 
 	}
 	if (Taken > 0) NotifyInventoryChanged();
 	return Taken;
+}
+
+float UInventoryComponent::GetTotalCarriedWeight() const
+{
+	float Total = 0.0f;
+	for (const TObjectPtr<UInventoryItemInstance>& Item : Items)
+	{
+		if (Item && Item->ItemData)
+			Total += Item->ItemData->ItemData.Weight * FMath::Max(0, Item->StackSize);
+	}
+	return Total;
 }
 
 void UInventoryComponent::NotifyInventoryChanged() { OnInventoryChanged.Broadcast(); }

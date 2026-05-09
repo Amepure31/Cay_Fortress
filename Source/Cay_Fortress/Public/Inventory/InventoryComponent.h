@@ -40,6 +40,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|State")
 	bool bIsInventoryOpen;
 
+	/** 禁止放入护甲容器物品（用于容器背包内部的 InventoryComponent，阻止嵌套容器） */
+	UPROPERTY()
+	bool bRejectContainerItems;
+
 	/** 二维网格数组 */
 	UPROPERTY()
 	TArray<FFInventoryGridCell> Grid;
@@ -243,6 +247,10 @@ public:
 	/** 从背包扣除指定类型弹药，返回实际扣除数量 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Ammo")
 	int32 ConsumeAmmoFromInventoryByType(EAmmoType Type, int32 Amount);
+
+	/** 计算背包中所有物品的总重量（Weight * StackSize 累加） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory")
+	float GetTotalCarriedWeight() const;
 
 	/**
 	 * 将已有物品实例放入背包空闲格（不新建 UObject，不触发武器「入包附带弹药」）。

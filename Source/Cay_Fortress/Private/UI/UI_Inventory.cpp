@@ -211,22 +211,27 @@ void UUI_Inventory::NativeConstruct()
 
 FReply UUI_Inventory::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (DraggedItemWidget && InKeyEvent.GetKey() == EKeys::R)
+	if (InKeyEvent.GetKey() == EKeys::R)
 	{
-		DraggedItemWidget->RotateDragFootprintClockwise();
+		// Dragging: rotate the dragged item
+		if (DraggedItemWidget)
+		{
+			DraggedItemWidget->RotateDragFootprintClockwise();
 
-		const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
-		if (UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos))
-		{
-			const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
-			const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
-			UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
+			const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+			if (UUI_ItemSlot* HoveredSlot = FindSlotAtScreenPosition(CursorPos))
+			{
+				const int32 TargetOriginX = HoveredSlot->GetGridX() - DraggedItemWidget->GetDragGrabCellX();
+				const int32 TargetOriginY = HoveredSlot->GetGridY() - DraggedItemWidget->GetDragGrabCellY();
+				UpdatePlacementPreview(DraggedItemWidget, TargetOriginX, TargetOriginY);
+			}
+			else
+			{
+				ClearPlacementPreview();
+			}
+			return FReply::Handled();
 		}
-		else
-		{
-			ClearPlacementPreview();
-		}
-		return FReply::Handled();
+
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
