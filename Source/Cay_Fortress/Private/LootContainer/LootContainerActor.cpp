@@ -17,7 +17,13 @@
 namespace
 {
 	constexpr float FoodRaritySigma = 1.35f;
-	static const FName ItemDataFolderPath(TEXT("/Game/Inventory/InventoryItemDataAsset"));
+
+	/** 勿用文件级 static FName：DLL/LiveCoding 加载时会在 FName 就绪前初始化，易 AV。 */
+	static FName GetItemDataFolderPathName()
+	{
+		static FName FolderPath(TEXT("/Game/Inventory/InventoryItemDataAsset"));
+		return FolderPath;
+	}
 
 static void CollectInventoryItemDataAssetsUnderPath(IAssetRegistry& AssetRegistry, TArray<UInventoryItemDataAsset*>& Result)
 {
@@ -49,14 +55,14 @@ static void CollectInventoryItemDataAssetsUnderPath(IAssetRegistry& AssetRegistr
 	};
 
 	TArray<FAssetData> AssetDataList;
-	AssetRegistry.GetAssetsByPath(ItemDataFolderPath, AssetDataList, true);
+	AssetRegistry.GetAssetsByPath(GetItemDataFolderPathName(), AssetDataList, true);
 	WalkAssetData(AssetDataList);
 
 	// Fallback: FARFilter survives cases where path listing is empty until the tree is synced.
 	if (Result.IsEmpty())
 	{
 		FARFilter Filter;
-		Filter.PackagePaths.Add(ItemDataFolderPath);
+		Filter.PackagePaths.Add(GetItemDataFolderPathName());
 		Filter.bRecursivePaths = true;
 
 		TArray<FAssetData> FilteredAssets;

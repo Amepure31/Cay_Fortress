@@ -261,6 +261,21 @@ void UUI_EquipmentSlot::ApplySlotChromeAndSize()
 		return;
 	}
 
+	// Capture the UMG designer brush & color before any modifications.
+	// This runs during widget creation when the background is still in its
+	// original designer state. Once captured, the empty-slot restore path
+	// in RefreshSlotVisual will always use these stored values.
+	if (SlotBackground && !bHasStoredDesignerSlotBackgroundBrush)
+	{
+		StoredDesignerSlotBackgroundBrush = SlotBackground->GetBrush();
+		bHasStoredDesignerSlotBackgroundBrush = true;
+		if (!bHasCachedManualSlotBackgroundColor)
+		{
+			CachedManualSlotBackgroundColor = SlotBackground->GetColorAndOpacity();
+			bHasCachedManualSlotBackgroundColor = true;
+		}
+	}
+
 	if (bUseDesignerSlotSize)
 	{
 		EnsureDesignerLayoutSyncTimer();
@@ -314,29 +329,11 @@ void UUI_EquipmentSlot::RefreshSlotVisual()
 	if (SlotBackground)
 	{
 		const FVector2D BgGeo = SlotBackground->GetCachedGeometry().GetLocalSize();
-		const bool bBgGeoReady = BgGeo.X > 1.0f && BgGeo.Y > 1.0f;
-
-		auto CaptureDesignerSlotBackgroundOnce = [this, bBgGeoReady]()
-		{
-			if (!SlotBackground || !bBgGeoReady || bHasStoredDesignerSlotBackgroundBrush)
-			{
-				return;
-			}
-			StoredDesignerSlotBackgroundBrush = SlotBackground->GetBrush();
-			bHasStoredDesignerSlotBackgroundBrush = true;
-			if (!bHasCachedManualSlotBackgroundColor)
-			{
-				CachedManualSlotBackgroundColor = SlotBackground->GetColorAndOpacity();
-				bHasCachedManualSlotBackgroundColor = true;
-			}
-		};
 
 		if (bHasEquipped)
 		{
 			if (UTexture2D* WhiteTex = LoadEngineWhiteSquareTexture())
 			{
-				CaptureDesignerSlotBackgroundOnce();
-
 				SlotBackground->SetBrushFromTexture(WhiteTex);
 				FSlateBrush BgBrush = SlotBackground->GetBrush();
 				BgBrush.TintColor = FSlateColor(FLinearColor::White);
@@ -353,15 +350,12 @@ void UUI_EquipmentSlot::RefreshSlotVisual()
 				SlotBackground->SetBrush(BgBrush);
 			}
 
-			// 装备时不用 UMG 灰底作乘色：白贴图 + 与背包格相同的纯色稀有度，整体替换底图观感。
 			CachedBackgroundBaseForDrag =
 				GetInventoryItemRaritySlotBackgroundColor(Equipped->ItemData->ItemData.Rarity);
 			SlotBackground->SetColorAndOpacity(CachedBackgroundBaseForDrag);
 		}
 		else
 		{
-			CaptureDesignerSlotBackgroundOnce();
-
 			if (bHasStoredDesignerSlotBackgroundBrush)
 			{
 				SlotBackground->SetBrush(StoredDesignerSlotBackgroundBrush);

@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Inventory/FItemShapeMask.h"
 #include "Inventory/FInventoryGridCell.h"
+#include "Inventory/InventoryItemDataAsset.h"
 #include "InventoryComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChangedDelegate);
@@ -131,6 +132,19 @@ public:
 		FDateTime BindTime = FDateTime::MinValue());
 
 	/**
+	 * 仅用于背包 UI「添加物品」按钮：先 AddItem，若为武器且开启入包附带弹药，再按弹匣容量以散装（不并入已有弹药堆）放入弹药。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool AddItemFromInventorySpawnerButton(class UInventoryItemDataAsset* ItemData, int32 StackSize = 1);
+
+	/**
+	 * 将武器实例弹匣内子弹退为散装弹药（每发尽量单独占格/新堆，不合并已有堆叠）。
+	 * @return 是否至少退出一发
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Weapon")
+	bool TryUnloadWeaponMagazineToLooseAmmo(class UInventoryItemInstance* WeaponInstance);
+
+	/**
 	 * 移除物品
 	 * @param ItemInstance 物品实例
 	 * @return 是否移除成功
@@ -210,7 +224,43 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool IsValidPosition(int32 SlotX, int32 SlotY) const;
 
+	/** 背包内某弹药类型的总数量（堆叠合计） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Ammo")
+	int32 GetTotalAmmoCountByAmmoType(EAmmoType Type) const;
+
+	/**
+	 * 与换弹、HUD 备弹统计一致：该武器在背包中应匹配的弹药 EAmmoType（优先 CompanionAmmoItemOverride 上弹药物品的 AmmoType）。
+	 */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Ammo")
+	EAmmoType GetReserveAmmoTypeForWeapon(const class UInventoryItemDataAsset* WeaponDA) const;
+
+	/**
+	 * 背包内可作为当前武器备弹的弹药总数：若武器配置了 Companion 弹药资产，则统计该资产及同 EAmmoType 的弹药堆叠；否则按枪械类型对应 EAmmoType 统计。
+	 */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Ammo")
+	int32 GetTotalReserveRoundsForWeaponInInventory(const class UInventoryItemDataAsset* WeaponDA) const;
+
+	/** 从背包扣除指定类型弹药，返回实际扣除数量 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Ammo")
+	int32 ConsumeAmmoFromInventoryByType(EAmmoType Type, int32 Amount);
+
+	/**
+	 * 将已有物品实例放入背包空闲格（不新建 UObject，不触发武器「入包附带弹药」）。
+	 * 用于卸下装备等场景。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool AddExistingItemInstance(class UInventoryItemInstance* Item);
+
+	/**
+	 * 武器入包附带弹药：当武器资产未指定 CompanionAmmoItemOverride 时，按枪械类型在此表查找默认弹药物品。
+	 * 键为 EAmmoType（与 GetExpectedAmmoTypeForWeaponClass 一致）；若整表为空，BeginPlay 会尝试从 /Game 下扫描 UInventoryItemDataAsset 自动填入每种 EAmmoType 的首个弹药资产。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Ammo")
+	TMap<EAmmoType, TObjectPtr<class UInventoryItemDataAsset>> DefaultAmmoItemByType;
+
 private:
+	mutable bool bDidAutoDiscoverDefaultAmmo = false;
+
 	/**
 	 * 占用网格位置
 	 * @param ItemInstance 物品实例
@@ -234,4 +284,18 @@ private:
 	 * 通知背包变化
 	 */
 	void NotifyInventoryChanged();
+
+	void TryAutoDiscoverDefaultAmmoItemsIfNeeded();
+
+	/** 与 AddItem 相同逻辑，成功时返回新建或合并到的实例，失败 nullptr */
+	class UInventoryItemInstance* TryAddItemReturningInstance(class UInventoryItemDataAsset* ItemData, int32 StackSize = 1);
+
+	class UInventoryItemDataAsset* ResolveCompanionAmmoItemForWeapon(const class UInventoryItemDataAsset* WeaponDA) const;
+	void TryGrantCompanionAmmoForWeaponLoose(class UInventoryItemDataAsset* WeaponItemData);
+	/**
+	 * 散装弹药入包：bAllowStackMerge=true 时可堆叠弹药走 AddItem 合并/分堆；false 时每发单独占格（如长按退弹）。
+	 * @return 实际放入发数
+	 */
+	int32 GrantLooseAmmoAsSingleStacks(class UInventoryItemDataAsset* AmmoDA, int32 RoundCount, bool bAllowStackMerge = true);
+	bool TryPlaceSingleNewStackIgnoringMerge(class UInventoryItemDataAsset* ItemData, int32 StackSize);
 };

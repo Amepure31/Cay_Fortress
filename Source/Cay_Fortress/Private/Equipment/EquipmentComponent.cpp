@@ -110,7 +110,7 @@ bool UEquipmentComponent::UnequipItemToInventory(EEquipmentSlotType Slot, UInven
 		return false;
 	}
 
-	if (!TargetInventory->AddItem(Item->ItemData, Item->StackSize))
+	if (!TargetInventory->AddExistingItemInstance(Item))
 	{
 		return false;
 	}

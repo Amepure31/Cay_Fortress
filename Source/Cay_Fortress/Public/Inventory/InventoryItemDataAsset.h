@@ -52,6 +52,9 @@ enum class EAmmoType : uint8
 	Other       UMETA(DisplayName = "其他")
 };
 
+/** 武器「枪械类型」对应的背包弹药（换弹从背包扣减、HUD 剩余量统计） */
+CAY_FORTRESS_API EAmmoType GetExpectedAmmoTypeForWeaponClass(EWeaponClass WeaponClass);
+
 USTRUCT(BlueprintType)
 struct CAY_FORTRESS_API FWeaponItemStats
 {
@@ -65,8 +68,11 @@ struct CAY_FORTRESS_API FWeaponItemStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon", meta = (DisplayName = "射速", ClampMin = "0.0", UIMin = "0.0"))
 	float FireRate;
 
-	/** 弹夹容量 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon", meta = (DisplayName = "弹夹容量", ClampMin = "1", UIMin = "1"))
+	/**
+	 * 弹匣容量；武器实例 `WeaponMagazineAmmo` 初始取此值（普通入包）。
+	 * 背包 UI「添加物品」入包且开启附带散装弹时：弹匣置空，按此发数在包内生成散装弹药（与枪内弹药分离）。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon", meta = (DisplayName = "弹匣容量", ClampMin = "1", UIMin = "1"))
 	int32 MagazineCapacity;
 
 	/** 水平后坐力 */
@@ -310,6 +316,12 @@ struct CAY_FORTRESS_API FInventoryItemData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stack", meta = (DisplayName = "可堆叠"))
 	bool bCanStack;
 
+	/**
+	 * 为 true 时：即使「物品类型」不是弹药，也会按下方「弹药属性」的子弹类型参与备弹统计、换弹消耗与入包散装解析（旧资产未改 ItemType 时用）。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Stack", meta = (DisplayName = "按弹药参与备弹/换弹"))
+	bool bCountAsAmmoForReserve;
+
 	/** 是否启用耐久度 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Durability", meta = (DisplayName = "启用耐久度"))
 	bool bUseDurability;
@@ -321,6 +333,19 @@ struct CAY_FORTRESS_API FInventoryItemData
 	/** 武器专属属性（仅武器显示） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|TypeSpecific", meta = (DisplayName = "武器属性", EditCondition = "ItemType == EInventoryItemType::Weapon", EditConditionHides))
 	FWeaponItemStats WeaponStats;
+
+	/**
+	 * 武器首次放入背包时，是否按「弹匣容量」自动添加一条弹药（数量=MagazineCapacity，受弹药 MaxStackSize 与背包空间限制）。
+	 * 卸下装备回到背包不会走此逻辑（使用已有实例移入，不重复发弹）。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|TypeSpecific", meta = (DisplayName = "入包时附带弹药", EditCondition = "ItemType == EInventoryItemType::Weapon", EditConditionHides))
+	bool bGrantCompanionAmmoWhenAddedToInventory = true;
+
+	/**
+	 * 指定要附带的弹药物品资产（ItemType 应为弹药，或在弹药资产上勾选「按弹药参与备弹/换弹」）；若为空则使用背包组件上的 DefaultAmmoItemByType 表或运行时自动扫描 /Game 下弹药数据资产。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|TypeSpecific", meta = (DisplayName = "附带弹药(可选覆盖)", EditCondition = "ItemType == EInventoryItemType::Weapon", EditConditionHides))
+	TObjectPtr<UInventoryItemDataAsset> CompanionAmmoItemOverride;
 
 	/** 食物专属属性（仅食物显示） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|TypeSpecific", meta = (DisplayName = "食物属性", EditCondition = "ItemType == EInventoryItemType::Food", EditConditionHides))
@@ -354,8 +379,11 @@ struct CAY_FORTRESS_API FInventoryItemData
 		, Height(1)
 		, MaxStackSize(1)
 		, bCanStack(false)
+		, bCountAsAmmoForReserve(false)
 		, bUseDurability(false)
 		, MaxDurability(100)
+		, bGrantCompanionAmmoWhenAddedToInventory(true)
+		, CompanionAmmoItemOverride(nullptr)
 	{
 		ShapeMaskData.Add(1);
 	}

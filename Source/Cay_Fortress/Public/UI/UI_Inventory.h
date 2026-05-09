@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 #include "UI/UI_Base_Class.h"
 #include "Inventory/InventoryComponent.h"
 #include "UI/UI_ItemWidget.h"
@@ -56,6 +57,13 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Settings", meta = (ClampMin = "0", UIMin = "0"))
 	int32 SlotSpacing;
+
+	/** 背包内鼠标悬停武器时，按住此键达到时长后清空弹匣，子弹以散装形式放入背包（与拖拽时 R 旋转占位互不冲突）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Weapon")
+	FKey WeaponUnloadMagazineKey = EKeys::R;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Weapon", meta = (ClampMin = "0.1", ClampMax = "3.0", UIMin = "0.1", UIMax = "3.0"))
+	float WeaponUnloadMagazineHoldSeconds = 0.45f;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Events")
 	FOnItemSlotClicked OnItemSlotClicked;
@@ -161,12 +169,22 @@ private:
 	UPROPERTY(Transient)
 	bool bHasLastHoverCursorPosition = false;
 
+	bool bWeaponUnloadKeyHeld = false;
+	float WeaponUnloadKeyHoldSeconds = 0.f;
+	bool bTriggeredWeaponUnloadThisHold = false;
+
 protected:
 	void CreateGrid();
 	void SetSlotSize();
 	void UpdateGridPanelSize();
-	void OnItemSlotClickedInternal(UUI_ItemSlot* Slot);
-	void ShowTooltip(UUI_ItemSlot* Slot);
+
+	/** AddDynamic 要求 UFUNCTION；勿删。 */
+	UFUNCTION()
+	void OnItemSlotClickedInternal(UUI_ItemSlot* ClickedSlot);
+
+	UFUNCTION()
+	void ShowTooltip(UUI_ItemSlot* HoveredSlot);
+
 	void HideTooltip();
 	void UpdateTooltipPosition();
 	void RefreshAddItemOptions();

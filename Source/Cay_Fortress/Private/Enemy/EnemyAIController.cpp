@@ -19,15 +19,44 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
+/** 惰性 FName，避免 TU 静态初始化顺序导致 NAME_None（日志里会打成 'None'）。 */
 namespace EnemyBlackboardKeys
 {
-	static const FName BehaviorState(TEXT("BehaviorState"));
-	static const FName TargetActor(TEXT("TargetActor"));
-	static const FName LastKnownLocation(TEXT("LastKnownLocation"));
-	static const FName HasLastKnown(TEXT("HasLastKnown"));
-	static const FName Suspicion(TEXT("Suspicion"));
-	static const FName SuspicionMax(TEXT("SuspicionMax"));
-	static const FName RoamTargetLocation(TEXT("RoamTargetLocation"));
+	inline FName KeyBehaviorState()
+	{
+		static const FName N(TEXT("BehaviorState"));
+		return N;
+	}
+	inline FName KeyTargetActor()
+	{
+		static const FName N(TEXT("TargetActor"));
+		return N;
+	}
+	inline FName KeyLastKnownLocation()
+	{
+		static const FName N(TEXT("LastKnownLocation"));
+		return N;
+	}
+	inline FName KeyHasLastKnown()
+	{
+		static const FName N(TEXT("HasLastKnown"));
+		return N;
+	}
+	inline FName KeySuspicion()
+	{
+		static const FName N(TEXT("Suspicion"));
+		return N;
+	}
+	inline FName KeySuspicionMax()
+	{
+		static const FName N(TEXT("SuspicionMax"));
+		return N;
+	}
+	inline FName KeyRoamTargetLocation()
+	{
+		static const FName N(TEXT("RoamTargetLocation"));
+		return N;
+	}
 }
 
 AEnemyAIController::AEnemyAIController(const FObjectInitializer& ObjectInitializer)
@@ -229,19 +258,19 @@ void AEnemyAIController::SyncStateToBlackboard()
 		return;
 	}
 
-	BB->SetValueAsEnum(EnemyBlackboardKeys::BehaviorState, static_cast<uint8>(CurrentState));
+	BB->SetValueAsEnum(EnemyBlackboardKeys::KeyBehaviorState(), static_cast<uint8>(CurrentState));
 	if (FocusTarget)
 	{
-		BB->SetValueAsObject(EnemyBlackboardKeys::TargetActor, FocusTarget);
+		BB->SetValueAsObject(EnemyBlackboardKeys::KeyTargetActor(), FocusTarget);
 	}
 	else
 	{
-		BB->ClearValue(EnemyBlackboardKeys::TargetActor);
+		BB->ClearValue(EnemyBlackboardKeys::KeyTargetActor());
 	}
-	BB->SetValueAsVector(EnemyBlackboardKeys::LastKnownLocation, LastKnownPlayerLocation);
-	BB->SetValueAsBool(EnemyBlackboardKeys::HasLastKnown, bHasLastKnownPlayerLocation);
-	BB->SetValueAsFloat(EnemyBlackboardKeys::Suspicion, Suspicion);
-	BB->SetValueAsFloat(EnemyBlackboardKeys::SuspicionMax, SuspicionMax);
+	BB->SetValueAsVector(EnemyBlackboardKeys::KeyLastKnownLocation(), LastKnownPlayerLocation);
+	BB->SetValueAsBool(EnemyBlackboardKeys::KeyHasLastKnown(), bHasLastKnownPlayerLocation);
+	BB->SetValueAsFloat(EnemyBlackboardKeys::KeySuspicion(), Suspicion);
+	BB->SetValueAsFloat(EnemyBlackboardKeys::KeySuspicionMax(), SuspicionMax);
 }
 
 void AEnemyAIController::ApplyLastKnownFromActor(AActor* const SourceActor)
@@ -289,11 +318,12 @@ void AEnemyAIController::SeedRoamBlackboardTarget()
 
 	RoamSeedAttemptCounter = 0;
 
-	const FBlackboard::FKey RoamKey = BB->GetKeyID(EnemyBlackboardKeys::RoamTargetLocation);
+	const FName RoamKeyName = EnemyBlackboardKeys::KeyRoamTargetLocation();
+	const FBlackboard::FKey RoamKey = BB->GetKeyID(RoamKeyName);
 	if (RoamKey == FBlackboard::InvalidKey)
 	{
 		UE_LOG(LogTemp, Error, TEXT("EnemyAI: Blackboard has no Vector key '%s'. Add it to BB_Enemy and point BT_Enemy at that blackboard."),
-			*EnemyBlackboardKeys::RoamTargetLocation.ToString());
+			*RoamKeyName.ToString());
 		return;
 	}
 
@@ -356,8 +386,8 @@ void AEnemyAIController::SeedRoamBlackboardTarget()
 		UE_LOG(LogTemp, Warning, TEXT("EnemyAI: No NavigationSystem — RoamTargetLocation may be off-mesh."));
 	}
 
-	BB->SetValueAsVector(EnemyBlackboardKeys::RoamTargetLocation, TargetLocation);
-	BB->SetValueAsEnum(EnemyBlackboardKeys::BehaviorState, static_cast<uint8>(EEnemyBehavior::Roam));
+	BB->SetValueAsVector(EnemyBlackboardKeys::KeyRoamTargetLocation(), TargetLocation);
+	BB->SetValueAsEnum(EnemyBlackboardKeys::KeyBehaviorState(), static_cast<uint8>(EEnemyBehavior::Roam));
 	CurrentState = EEnemyBehavior::Roam;
 }
 
@@ -494,6 +524,17 @@ void AEnemyAIController::NotifyDamagedBy(AActor* const DamageCauser)
 		}
 	}
 	bPlayerCurrentlyPerceived = FocusTarget != nullptr;
+
+	if (FocusTarget)
+	{
+		// 受击瞬间把黑板 LastKnown 拉到玩家当前位置（不依赖 Chase Tick 间隔），并锁定 AI 注视目标。
+		ApplyLastKnownFromActor(FocusTarget);
+		SetFocus(FocusTarget, EAIFocusPriority::Gameplay);
+	}
+	else
+	{
+		ClearFocus(EAIFocusPriority::Gameplay);
+	}
 
 	if (GetWorld())
 	{

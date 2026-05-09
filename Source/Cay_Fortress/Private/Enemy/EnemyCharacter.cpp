@@ -2,10 +2,18 @@
 
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/EnemyAIController.h"
+#include "CayFortressCollisionChannels.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+
+namespace
+{
+/** 登记顺序 = 死亡先后；队首为最久尸体，超过上限时先销毁队首。 */
+static TArray<TWeakObjectPtr<AEnemyCharacter>> GEnemyCorpseQueueOldestFirst;
+} // namespace
 
 AEnemyCharacter::AEnemyCharacter()
 {
@@ -26,6 +34,12 @@ AEnemyCharacter::AEnemyCharacter()
 	LocomotionTargetMaxWalkSpeed = RoamWalkSpeed;
 }
 
+void AEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveCorpseFromGlobalList(this);
+	Super::EndPlay(EndPlayReason);
+}
+
 void AEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -35,6 +49,62 @@ void AEnemyCharacter::BeginPlay()
 		LocomotionTargetMaxWalkSpeed = RoamWalkSpeed;
 		Move->MaxWalkSpeed = RoamWalkSpeed;
 	}
+
+	ConfigureWeaponTraceCollision();
+}
+
+void AEnemyCharacter::ConfigureWeaponTraceCollision()
+{
+	if (UCapsuleComponent* const RootCap = GetCapsuleComponent())
+	{
+		RootCap->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
+	}
+	if (USkeletalMeshComponent* const SkelMesh = GetMesh())
+	{
+		SkelMesh->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Block);
+		if (SkelMesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+		{
+			SkelMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+	}
+}
+
+float AEnemyCharacter::GetWeaponHitDamageMultiplierFromBoneName(const FName HitBoneName) const
+{
+	if (HitBoneName.IsNone())
+	{
+		return FMath::Max(0.f, WeaponHitDamageMultDefault);
+	}
+
+	const FString L = HitBoneName.ToString().ToLower();
+
+	if (L.Contains(TEXT("head")) || L.Contains(TEXT("neck")))
+	{
+		return FMath::Max(0.f, WeaponHitDamageMultHead);
+	}
+
+	const bool bLegBone = L.Contains(TEXT("upleg")) || L.Contains(TEXT("lowleg")) || L.Contains(TEXT("thigh"))
+		|| L.Contains(TEXT("calf")) || L.Contains(TEXT("foot")) || L.Contains(TEXT("toe")) || L.Contains(TEXT("knee"))
+		|| (L.Contains(TEXT("leg")) && !L.Contains(TEXT("arm")));
+
+	if (bLegBone)
+	{
+		return FMath::Max(0.f, WeaponHitDamageMultLeg);
+	}
+
+	if (L.Contains(TEXT("arm")) || L.Contains(TEXT("hand")) || L.Contains(TEXT("wrist")) || L.Contains(TEXT("finger"))
+		|| L.Contains(TEXT("thumb")) || L.Contains(TEXT("shoulder")) || L.Contains(TEXT("clavicle")))
+	{
+		return FMath::Max(0.f, WeaponHitDamageMultArm);
+	}
+
+	if (L.Contains(TEXT("spine")) || L.Contains(TEXT("hips")) || L.Contains(TEXT("pelvis")) || L.Contains(TEXT("chest"))
+		|| L.Contains(TEXT("root")))
+	{
+		return FMath::Max(0.f, WeaponHitDamageMultTorso);
+	}
+
+	return FMath::Max(0.f, WeaponHitDamageMultDefault);
 }
 
 void AEnemyCharacter::Tick(const float DeltaSeconds)
@@ -223,6 +293,68 @@ void AEnemyCharacter::PlayAttackMontageIfPossible()
 	AnimInst->Montage_SetEndDelegate(EndDelegate, AttackMontage);
 }
 
+void AEnemyCharacter::FreezeDeathPoseMesh()
+{
+	if (USkeletalMeshComponent* const Skel = GetMesh())
+	{
+		Skel->GlobalAnimRateScale = 0.f;
+	}
+}
+
+void AEnemyCharacter::DisableRootCapsuleForCorpse()
+{
+	UCapsuleComponent* const Cap = GetCapsuleComponent();
+	if (!Cap)
+	{
+		return;
+	}
+	Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Cap->SetGenerateOverlapEvents(false);
+	const float R = FMath::Max(0.5f, CorpseCapsuleRadiusCm);
+	const float H = FMath::Max(0.5f, CorpseCapsuleHalfHeightCm);
+	Cap->SetCapsuleSize(R, H, true);
+}
+
+void AEnemyCharacter::RemoveCorpseFromGlobalList(const AEnemyCharacter* Corpse)
+{
+	if (!Corpse)
+	{
+		return;
+	}
+	GEnemyCorpseQueueOldestFirst.RemoveAllSwap([Corpse](const TWeakObjectPtr<AEnemyCharacter>& W)
+	{
+		return W.Get() == Corpse;
+	});
+}
+
+void AEnemyCharacter::RegisterAsCorpseAndCullOldest()
+{
+	if (bRegisteredAsCorpse || !IsValid(this))
+	{
+		return;
+	}
+
+	GEnemyCorpseQueueOldestFirst.RemoveAllSwap([](const TWeakObjectPtr<AEnemyCharacter>& W)
+	{
+		return !W.IsValid();
+	});
+
+	const int32 MaxCount = FMath::Clamp(MaxEnemyCorpsesInWorld, 1, 64);
+	while (GEnemyCorpseQueueOldestFirst.Num() >= MaxCount)
+	{
+		const TWeakObjectPtr<AEnemyCharacter> Oldest = GEnemyCorpseQueueOldestFirst[0];
+		GEnemyCorpseQueueOldestFirst.RemoveAt(0);
+		if (Oldest.IsValid())
+		{
+			Oldest->Destroy();
+		}
+	}
+
+	GEnemyCorpseQueueOldestFirst.Add(this);
+	bRegisteredAsCorpse = true;
+}
+
 void AEnemyCharacter::PlayDeathMontageAndCleanup()
 {
 	if (bIsDead)
@@ -236,20 +368,32 @@ void AEnemyCharacter::PlayDeathMontageAndCleanup()
 		AI->NotifyDeathBegin();
 	}
 
+	DetachFromControllerPendingDestroy();
+
 	HandleDeathSequenceStarted();
+	DisableRootCapsuleForCorpse();
 
 	USkeletalMeshComponent* const Skel = GetMesh();
 	UAnimInstance* const AnimInst = Skel ? Skel->GetAnimInstance() : nullptr;
 	if (AnimInst && DeathMontage)
 	{
 		AnimInst->Montage_Play(DeathMontage, 1.f, EMontagePlayReturnType::MontageLength, 0.f, true);
+		FOnMontageBlendingOutStarted BlendOutDel;
+		BlendOutDel.BindUObject(this, &AEnemyCharacter::OnDeathMontageBlendingOut);
+		AnimInst->Montage_SetBlendingOutDelegate(BlendOutDel, DeathMontage);
 		FOnMontageEnded EndDelegate;
 		EndDelegate.BindUObject(this, &AEnemyCharacter::OnDeathMontageEnded);
 		AnimInst->Montage_SetEndDelegate(EndDelegate, DeathMontage);
 	}
 	else
 	{
-		SetLifeSpan(0.1f);
+		FreezeDeathPoseMesh();
+		DisableRootCapsuleForCorpse();
+		if (Skel)
+		{
+			Skel->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
+		}
+		RegisterAsCorpseAndCullOldest();
 	}
 }
 
@@ -351,13 +495,28 @@ void AEnemyCharacter::OnAttackMontageEnded(UAnimMontage* Montage, const bool bIn
 	}
 }
 
+void AEnemyCharacter::OnDeathMontageBlendingOut(UAnimMontage* Montage, const bool bInterrupted)
+{
+	(void)bInterrupted;
+	if (Montage != DeathMontage.Get())
+	{
+		return;
+	}
+	FreezeDeathPoseMesh();
+}
+
 void AEnemyCharacter::OnDeathMontageEnded(UAnimMontage* Montage, const bool bInterrupted)
 {
-	(void)Montage;
 	(void)bInterrupted;
-	if (UCapsuleComponent* const Cap = GetCapsuleComponent())
+	if (Montage != DeathMontage.Get())
 	{
-		Cap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		return;
 	}
-	SetLifeSpan(0.05f);
+	FreezeDeathPoseMesh();
+	DisableRootCapsuleForCorpse();
+	if (USkeletalMeshComponent* const Skel = GetMesh())
+	{
+		Skel->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
+	}
+	RegisterAsCorpseAndCullOldest();
 }

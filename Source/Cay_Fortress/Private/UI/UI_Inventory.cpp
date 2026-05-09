@@ -5,6 +5,8 @@
 #include "Components/UniformGridPanel.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItemDataAsset.h"
+#include "Inventory/InventoryItemType.h"
+#include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWidget.h"
 #include "Input/Events.h"
@@ -299,6 +301,41 @@ void UUI_Inventory::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	// Non-drag phase uses cursor-based hit test every tick for reliable hover.
 	UpdateHoverStateFromCursor();
+
+	if (!DraggedItemWidget && BoundInventory)
+	{
+		APlayerController* PC = GetOwningPlayer();
+		const bool bKeyDown = PC && PC->IsInputKeyDown(WeaponUnloadMagazineKey);
+		if (bKeyDown)
+		{
+			if (!bWeaponUnloadKeyHeld)
+			{
+				bWeaponUnloadKeyHeld = true;
+				WeaponUnloadKeyHoldSeconds = 0.f;
+				bTriggeredWeaponUnloadThisHold = false;
+			}
+			WeaponUnloadKeyHoldSeconds += InDeltaTime;
+			if (!bTriggeredWeaponUnloadThisHold && WeaponUnloadKeyHoldSeconds >= WeaponUnloadMagazineHoldSeconds)
+			{
+				if (HoveredItemInstance && HoveredItemInstance->ItemData
+					&& HoveredItemInstance->ItemData->ItemData.ItemType == EInventoryItemType::Weapon
+					&& HoveredItemInstance->WeaponMagazineAmmo > 0)
+				{
+					if (BoundInventory->TryUnloadWeaponMagazineToLooseAmmo(HoveredItemInstance))
+					{
+						UpdateInventory();
+					}
+				}
+				bTriggeredWeaponUnloadThisHold = true;
+			}
+		}
+		else
+		{
+			bWeaponUnloadKeyHeld = false;
+			WeaponUnloadKeyHoldSeconds = 0.f;
+			bTriggeredWeaponUnloadThisHold = false;
+		}
+	}
 }
 
 bool UUI_Inventory::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
@@ -387,6 +424,9 @@ void UUI_Inventory::NativeDestruct()
 	ItemSlots.Empty();
 	SetDraggedItemWidget(nullptr);
 	HoveredItemInstance = nullptr;
+	bWeaponUnloadKeyHeld = false;
+	WeaponUnloadKeyHoldSeconds = 0.f;
+	bTriggeredWeaponUnloadThisHold = false;
 	Super::NativeDestruct();
 }
 
@@ -542,9 +582,9 @@ void UUI_Inventory::CreateGrid()
 	SetSlotSize();
 }
 
-void UUI_Inventory::OnItemSlotClickedInternal(UUI_ItemSlot* GridSlot)
+void UUI_Inventory::OnItemSlotClickedInternal(UUI_ItemSlot* ClickedSlot)
 {
-	OnItemSlotClicked.Broadcast(GridSlot);
+	OnItemSlotClicked.Broadcast(ClickedSlot);
 }
 
 void UUI_Inventory::SetSlotSize()
@@ -619,17 +659,17 @@ void UUI_Inventory::UpdateSlotCanPlacePreviews(UUI_ItemWidget* ItemWidget)
 	}
 }
 
-void UUI_Inventory::ShowTooltip(UUI_ItemSlot* GridSlot)
+void UUI_Inventory::ShowTooltip(UUI_ItemSlot* HoveredSlot)
 {
-	if (!GridSlot)
+	if (!HoveredSlot)
 	{
 		return;
 	}
 
-	UInventoryItemInstance* ItemToShow = GridSlot->GetBoundItem();
+	UInventoryItemInstance* ItemToShow = HoveredSlot->GetBoundItem();
 	if (!ItemToShow && BoundInventory)
 	{
-		ItemToShow = BoundInventory->GetItemAtPosition(GridSlot->GetGridX(), GridSlot->GetGridY());
+		ItemToShow = BoundInventory->GetItemAtPosition(HoveredSlot->GetGridX(), HoveredSlot->GetGridY());
 	}
 
 	ShowTooltipForItem(ItemToShow);
@@ -717,6 +757,9 @@ void UUI_Inventory::SetDraggedItemWidget(UUI_ItemWidget* InWidget)
 	DraggedItemWidget = InWidget;
 	if (DraggedItemWidget)
 	{
+		bWeaponUnloadKeyHeld = false;
+		WeaponUnloadKeyHoldSeconds = 0.f;
+		bTriggeredWeaponUnloadThisHold = false;
 		SetKeyboardFocus();
 		SuppressDraggedItemSlotVisuals(DraggedItemWidget->GetItemInstance());
 	}
@@ -1047,8 +1090,7 @@ bool UUI_Inventory::TryPlaceDraggedItem(UUI_ItemWidget* ItemWidget, int32 Origin
 			ItemInstance->Durability,
 			ItemInstance->MaxDurability,
 			ItemInstance->bIsBound,
-			ItemInstance->BindTime
-		);
+			ItemInstance->BindTime);
 		if (!AddedItem)
 		{
 			ClearPlacementPreview();
@@ -1112,7 +1154,7 @@ void UUI_Inventory::AddItemFromDataAsset(class UInventoryItemDataAsset* ItemData
 		return;
 	}
 
-	BoundInventory->AddItem(ItemData, StackSize);
+	BoundInventory->AddItemFromInventorySpawnerButton(ItemData, StackSize);
 }
 
 TArray<UInventoryItemDataAsset*> UUI_Inventory::GetAllItemDataAssets() const
@@ -1167,6 +1209,10 @@ TArray<UInventoryItemDataAsset*> UUI_Inventory::GetAvailableItemDataAssets() con
 
 void UUI_Inventory::CloseInventory()
 {
+	bWeaponUnloadKeyHeld = false;
+	WeaponUnloadKeyHoldSeconds = 0.f;
+	bTriggeredWeaponUnloadThisHold = false;
+
 	// Ensure hover preview/tooltip never lingers after closing inventory.
 	ClearItemHoverPreview();
 	HideTooltip();

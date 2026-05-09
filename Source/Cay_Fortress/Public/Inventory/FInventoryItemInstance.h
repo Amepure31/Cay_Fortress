@@ -67,6 +67,10 @@ public:
 	UPROPERTY()
 	bool bIsBound;
 
+	/** 武器当前弹匣内子弹数（仅 ItemType==Weapon 有意义；换弹与开火由角色逻辑维护） */
+	UPROPERTY()
+	int32 WeaponMagazineAmmo;
+
 	UInventoryItemInstance()
 		: ItemData(nullptr)
 		, StackSize(1)
@@ -79,6 +83,7 @@ public:
 		, RotationQuarterTurns(0)
 		, BindTime(FDateTime::MinValue())
 		, bIsBound(false)
+		, WeaponMagazineAmmo(0)
 	{
 	}
 
@@ -106,6 +111,15 @@ public:
 			{
 				MaxDurability = 0;
 				Durability = 0;
+			}
+
+			if (InItemData->ItemData.ItemType == EInventoryItemType::Weapon)
+			{
+				WeaponMagazineAmmo = FMath::Max(0, InItemData->ItemData.WeaponStats.MagazineCapacity);
+			}
+			else
+			{
+				WeaponMagazineAmmo = 0;
 			}
 		}
 	}

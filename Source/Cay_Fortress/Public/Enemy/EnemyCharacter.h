@@ -41,8 +41,16 @@ public:
 	/** 尖叫结束由蒙太奇回调通知 AI 恢复 Chase 寻路。 */
 	void NotifyScreamIntroMontageEnded();
 
+	/**
+	 * 武器专用 Trace 命中本角色骨骼网格（Physics Asset）时，按 Hit.BoneName 映射伤害倍率。
+	 * 需在骨骼网格上挂好 Physics Asset，且网格对 CayFortressWeapon 为 Block。
+	 */
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	float GetWeaponHitDamageMultiplierFromBoneName(FName HitBoneName) const;
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0"))
@@ -82,12 +90,45 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Animation|Locomotion", meta = (ClampMin = "0.5", ClampMax = "40"))
 	float MaxWalkSpeedInterpSpeed = 9.f;
 
+	/** 命中骨骼名含 head/neck 时的倍率 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|PhysicsAssetHit", meta = (ClampMin = "0"))
+	float WeaponHitDamageMultHead = 2.f;
+
+	/** 命中脊柱、骨盆、髋根等躯干骨骼时的倍率 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|PhysicsAssetHit", meta = (ClampMin = "0"))
+	float WeaponHitDamageMultTorso = 1.f;
+
+	/** 命中肩、臂、手等时的倍率 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|PhysicsAssetHit", meta = (ClampMin = "0"))
+	float WeaponHitDamageMultArm = 0.85f;
+
+	/** 命中腿、脚等时的倍率 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|PhysicsAssetHit", meta = (ClampMin = "0"))
+	float WeaponHitDamageMultLeg = 0.75f;
+
+	/** BoneName 无法归类时的倍率 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|PhysicsAssetHit", meta = (ClampMin = "0"))
+	float WeaponHitDamageMultDefault = 1.f;
+
+	/** 世界中最多保留的敌人尸体数量；超过则销毁最早登记的一具。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Character|Death", meta = (ClampMin = "1", ClampMax = "64", UIMin = "1", UIMax = "64"))
+	int32 MaxEnemyCorpsesInWorld = 15;
+
+	/** 死亡后根胶囊收缩半径（厘米），避免尸体旁仍立着大胶囊碰撞/调试线。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Character|Death", meta = (ClampMin = "0.5", UIMin = "0.5"))
+	float CorpseCapsuleRadiusCm = 1.f;
+
+	/** 死亡后根胶囊收缩半高（厘米）。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Character|Death", meta = (ClampMin = "0.5", UIMin = "0.5"))
+	float CorpseCapsuleHalfHeightCm = 1.f;
+
 private:
 	void HandleDeathSequenceStarted();
 	void ApplyMovementSpeedForBehavior(EEnemyBehavior Behavior, bool bDuringScreamHoldInPlace);
 	void UpdateSmoothedMaxWalkSpeed(float DeltaSeconds);
 	void PlayAttackMontageIfPossible();
 	void PlayDeathMontageAndCleanup();
+	void ConfigureWeaponTraceCollision();
 
 	UFUNCTION()
 	void OnScreamMontageEnded(UAnimMontage* Montage, bool bInterrupted);
@@ -97,6 +138,9 @@ private:
 
 	UFUNCTION()
 	void OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	UFUNCTION()
+	void OnDeathMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 
 	UPROPERTY(Transient)
 	bool bIsDead = false;
@@ -108,4 +152,11 @@ private:
 	bool bHitReactMoveLocked = false;
 
 	float LocomotionTargetMaxWalkSpeed = 280.f;
+
+	bool bRegisteredAsCorpse = false;
+
+	void FreezeDeathPoseMesh();
+	void DisableRootCapsuleForCorpse();
+	void RegisterAsCorpseAndCullOldest();
+	static void RemoveCorpseFromGlobalList(const AEnemyCharacter* Corpse);
 };
