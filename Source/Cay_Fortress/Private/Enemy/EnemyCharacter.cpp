@@ -2,12 +2,16 @@
 
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/EnemyAIController.h"
+#include "DestructibleObstacleInterface.h"
+#include "Alex_PlayerCharacter.h"
 #include "CayFortressCollisionChannels.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/DamageType.h"
+#include "Kismet/GameplayStatics.h"
 
 namespace
 {
@@ -199,7 +203,7 @@ void AEnemyCharacter::UpdateSmoothedMaxWalkSpeed(const float DeltaSeconds)
 	}
 
 	const bool bScreamHoldInPlace = bScreamIntroPlaying && GetVisualAIBehavior() == EEnemyBehavior::Chase;
-	if (bHitReactMoveLocked || bScreamHoldInPlace)
+	if (bHitReactMoveLocked || bScreamHoldInPlace || bPostAttackRoarPlaying)
 	{
 		LocomotionTargetMaxWalkSpeed = 0.f;
 		Move->MaxWalkSpeed = 0.f;
@@ -416,6 +420,25 @@ void AEnemyCharacter::NotifyAIBehaviorChanged(const EEnemyBehavior Previous, con
 				}
 			}
 		}
+
+		// 离开 Attack 时清理攻击后咆哮状态
+		if (bPostAttackRoarPlaying)
+		{
+			bPostAttackRoarPlaying = false;
+			bAttackHitSuccessful = false;
+			bAttackHitDoor = false;
+			const TObjectPtr<UAnimMontage> RoarMont = PostAttackRoarMontage ? PostAttackRoarMontage : ScreamMontage;
+			if (USkeletalMeshComponent* const Skel = GetMesh())
+			{
+				if (UAnimInstance* const AnimInst = Skel->GetAnimInstance(); AnimInst && RoarMont)
+				{
+					if (AnimInst->Montage_IsActive(RoarMont))
+					{
+						AnimInst->Montage_Stop(0.15f, RoarMont);
+					}
+				}
+			}
+		}
 	}
 
 	if (NewState == EEnemyBehavior::Chase && Previous == EEnemyBehavior::Alert)
@@ -451,6 +474,12 @@ void AEnemyCharacter::NotifyAIBehaviorChanged(const EEnemyBehavior Previous, con
 	switch (NewState)
 	{
 	case EEnemyBehavior::Attack:
+		bAttackHitSuccessful = false;
+		bAttackHitDoor = false;
+		if (UCharacterMovementComponent* const Move = GetCharacterMovement())
+		{
+			Move->StopMovementImmediately();
+		}
 		PlayAttackMontageIfPossible();
 		break;
 	default:
@@ -489,6 +518,15 @@ void AEnemyCharacter::OnAttackMontageEnded(UAnimMontage* Montage, const bool bIn
 	{
 		return;
 	}
+
+	if (!bInterrupted && bAttackHitSuccessful && !bAttackHitDoor)
+	{
+		PlayPostAttackRoar();
+		return;
+	}
+
+	bAttackHitSuccessful = false;
+	bAttackHitDoor = false;
 	if (AEnemyAIController* const AI = Cast<AEnemyAIController>(GetController()))
 	{
 		AI->NotifyAttackMontageFinished(bInterrupted);
@@ -519,4 +557,115 @@ void AEnemyCharacter::OnDeathMontageEnded(UAnimMontage* Montage, const bool bInt
 		Skel->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
 	}
 	RegisterAsCorpseAndCullOldest();
+}
+
+void AEnemyCharacter::PerformAttackDamageToPlayer()
+{
+	if (bIsDead || bAttackHitSuccessful)
+	{
+		return;
+	}
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector Forward = GetActorForwardVector();
+	const FVector Start = GetActorLocation() + Forward * AttackMeleeSweepRadius;
+	const FVector End = Start + Forward * AttackMeleeRange;
+
+	const FCollisionShape SweepShape = FCollisionShape::MakeSphere(AttackMeleeSweepRadius);
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	// 1) 优先扫玩家
+	FHitResult Hit;
+	const bool bHit = World->SweepSingleByChannel(
+		Hit, Start, End, FQuat::Identity,
+		ECC_Pawn, SweepShape, QueryParams);
+
+	if (bHit && Hit.GetActor())
+	{
+		if (AAlex_PlayerCharacter* const Player = Cast<AAlex_PlayerCharacter>(Hit.GetActor()))
+		{
+			UGameplayStatics::ApplyDamage(Player, AttackDamageAmount, GetController(), this, UDamageType::StaticClass());
+			bAttackHitSuccessful = true;
+			bAttackHitDoor = false;
+			return;
+		}
+	}
+
+	// 2) 再扫可破坏障碍物（门）
+	FHitResult ObstacleHit;
+	const bool bHitObstacle = World->SweepSingleByObjectType(
+		ObstacleHit, Start, End, FQuat::Identity,
+		FCollisionObjectQueryParams(CayFortressCollision::DestructibleObstacle),
+		SweepShape, QueryParams);
+
+	if (bHitObstacle && ObstacleHit.GetActor() && ObstacleHit.GetActor()->Implements<UDestructibleObstacle>())
+	{
+		IDestructibleObstacle::Execute_TakeAIAttackDamage(ObstacleHit.GetActor(), DoorDamageAmount);
+
+		if (IDestructibleObstacle::Execute_IsObstacleDestroyed(ObstacleHit.GetActor()))
+		{
+			if (AEnemyAIController* const AI = Cast<AEnemyAIController>(GetController()))
+			{
+				AI->NotifyDoorDestroyedDuringAttack();
+			}
+		}
+
+		bAttackHitSuccessful = true;
+		bAttackHitDoor = true;
+	}
+}
+
+void AEnemyCharacter::PlayPostAttackRoar()
+{
+	USkeletalMeshComponent* const Skel = GetMesh();
+	UAnimInstance* const AnimInst = Skel ? Skel->GetAnimInstance() : nullptr;
+	UAnimMontage* const RoarMont = PostAttackRoarMontage ? PostAttackRoarMontage.Get() : ScreamMontage.Get();
+
+	if (AnimInst && RoarMont)
+	{
+		bPostAttackRoarPlaying = true;
+		ApplyMovementSpeedForBehavior(EEnemyBehavior::Attack, true);
+
+		const float Len = AnimInst->Montage_Play(RoarMont, 1.f, EMontagePlayReturnType::MontageLength, 0.f, true);
+		if (Len > 0.f)
+		{
+			FOnMontageEnded EndDelegate;
+			EndDelegate.BindUObject(this, &AEnemyCharacter::OnPostAttackRoarMontageEnded);
+			AnimInst->Montage_SetEndDelegate(EndDelegate, RoarMont);
+		}
+		else
+		{
+			OnPostAttackRoarMontageEnded(RoarMont, true);
+		}
+	}
+	else
+	{
+		bAttackHitSuccessful = false;
+		bAttackHitDoor = false;
+		if (AEnemyAIController* const AI = Cast<AEnemyAIController>(GetController()))
+		{
+			AI->NotifyAttackMontageFinished(false);
+		}
+	}
+}
+
+void AEnemyCharacter::OnPostAttackRoarMontageEnded(UAnimMontage* Montage, const bool bInterrupted)
+{
+	(void)Montage;
+	bPostAttackRoarPlaying = false;
+	bAttackHitSuccessful = false;
+	bAttackHitDoor = false;
+
+	ApplyMovementSpeedForBehavior(EEnemyBehavior::Attack, false);
+
+	if (AEnemyAIController* const AI = Cast<AEnemyAIController>(GetController()))
+	{
+		AI->NotifyAttackMontageFinished(bInterrupted);
+	}
 }

@@ -4,6 +4,8 @@
 #include "AITypes.h"
 #include "Alex_PlayerCharacter.h"
 #include "BrainComponent.h"
+#include "DestructibleObstacleInterface.h"
+#include "CayFortressCollisionChannels.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/EnemyBehaviorBlueprintLibrary.h"
 #include "BehaviorTree/BehaviorTree.h"
@@ -164,13 +166,33 @@ void AEnemyAIController::Tick(const float DeltaSeconds)
 		if (FVector::DistSquared(SelfPawn->GetActorLocation(), Alex->GetActorLocation()) <= RangeSq
 			&& (CurrentState == EEnemyBehavior::Chase || CurrentState == EEnemyBehavior::Alert))
 		{
+			ClearDoorTarget();
 			SetBehaviorState(EEnemyBehavior::Attack);
 			ChaseBlackboardRefreshAccumulator = 0.f;
 			return;
 		}
 	}
 
-	if (CurrentState != EEnemyBehavior::Chase || !IsValid(FocusTarget) || !Alex || !bPlayerCurrentlyPerceived)
+	if (SelfPawn && (CurrentDoorTarget != nullptr) && CurrentState != EEnemyBehavior::Attack && AttackCooldownRemain <= 0.f)
+	{
+		const float RangeSq = FMath::Square(AttackTriggerRange + DoorAttackRangeAdj);
+		if (FVector::DistSquared(SelfPawn->GetActorLocation(), CurrentDoorTarget->GetActorLocation()) <= RangeSq
+			&& CurrentState == EEnemyBehavior::Chase)
+		{
+			SetBehaviorState(EEnemyBehavior::Attack);
+			ChaseBlackboardRefreshAccumulator = 0.f;
+			return;
+		}
+	}
+
+	const bool bHasDoorTarget = (CurrentDoorTarget != nullptr);
+	if (CurrentState != EEnemyBehavior::Chase)
+	{
+		ChaseBlackboardRefreshAccumulator = 0.f;
+		return;
+	}
+
+	if (!bHasDoorTarget && (!IsValid(FocusTarget) || !Alex || !bPlayerCurrentlyPerceived))
 	{
 		ChaseBlackboardRefreshAccumulator = 0.f;
 		return;
@@ -186,7 +208,10 @@ void AEnemyAIController::Tick(const float DeltaSeconds)
 		ChaseBlackboardRefreshAccumulator = 0.f;
 	}
 
-	ApplyLastKnownFromActor(Alex);
+	if (!bHasDoorTarget && Alex)
+	{
+		ApplyLastKnownFromActor(Alex);
+	}
 	SyncStateToBlackboard();
 	if (bDriveChaseFromController)
 	{
@@ -204,7 +229,24 @@ void AEnemyAIController::DriveChaseMove()
 	{
 		return;
 	}
-	FAIMoveRequest MoveRequest(LastKnownPlayerLocation);
+
+	const bool bHasDoorTarget = (CurrentDoorTarget != nullptr);
+
+	// 有门目标时导航到门的可采样位置；否则追玩家最后已知位置。
+	FVector MoveGoal;
+	if (bHasDoorTarget)
+	{
+		MoveGoal = UCayEnemyBehaviorBlueprintLibrary::GetActorNavSampleLocation(CurrentDoorTarget.Get());
+		FVector Snapped = MoveGoal;
+		UCayEnemyBehaviorBlueprintLibrary::SnapWorldLocationToNavMesh(this, MoveGoal, Snapped, 300.f, 500.f);
+		MoveGoal = Snapped;
+	}
+	else
+	{
+		MoveGoal = LastKnownPlayerLocation;
+	}
+
+	FAIMoveRequest MoveRequest(MoveGoal);
 	MoveRequest.SetAcceptanceRadius(ChaseMoveAcceptanceRadius);
 	MoveRequest.SetUsePathfinding(true);
 	MoveRequest.SetProjectGoalLocation(true);
@@ -218,12 +260,36 @@ void AEnemyAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFoll
 
 	if (CurrentState == EEnemyBehavior::Chase && BehaviorTree)
 	{
+		// 门目标下，门已破坏则恢复追玩家
+		if ((CurrentDoorTarget != nullptr))
+		{
+			if (IDestructibleObstacle::Execute_IsObstacleDestroyed(CurrentDoorTarget.Get()))
+			{
+				ClearDoorTarget();
+			}
+			else
+			{
+				// 仍在攻门途中，继续 MoveTo 门
+				SyncStateToBlackboard();
+				return;
+			}
+		}
+
 		if (AAlex_PlayerCharacter* const Alex = Cast<AAlex_PlayerCharacter>(FocusTarget))
 		{
 			ApplyLastKnownFromActor(Alex);
 			SyncStateToBlackboard();
-			// 不可在此调用 DriveChaseMove：MoveTo 可能同步触发 OnPathFinished → OnMoveCompleted，
-			// 与 ApplyLastKnown → ProjectPointToNavigation 叠成无限递归（栈溢出）。
+
+			// 路径被挡检测：玩家太远则是 Partial Path，检查是否有可破坏的门
+			APawn* const SelfPawn = GetPawn();
+			if (SelfPawn)
+			{
+				const float DistSq = FVector::DistSquared(SelfPawn->GetActorLocation(), Alex->GetActorLocation());
+				if (DistSq > FMath::Square(AttackTriggerRange + 400.f))
+				{
+					HandlePathBlocked();
+				}
+			}
 		}
 		return;
 	}
@@ -237,6 +303,150 @@ void AEnemyAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFoll
 	if (bPrototypeRandomRoam && CurrentState == EEnemyBehavior::Roam && !BehaviorTree)
 	{
 		RequestRandomMove();
+	}
+}
+
+void AEnemyAIController::HandlePathBlocked()
+{
+	APawn* const SelfPawn = GetPawn();
+	if (!SelfPawn)
+	{
+		return;
+	}
+
+	const FVector MyLoc = SelfPawn->GetActorLocation();
+
+	// 向玩家方向做球形扫描，只找 DestructibleObstacle 类型的门
+	AAlex_PlayerCharacter* const Alex = Cast<AAlex_PlayerCharacter>(FocusTarget);
+	FVector SearchDir = Alex ? (Alex->GetActorLocation() - MyLoc).GetSafeNormal2D() : SelfPawn->GetActorForwardVector();
+	if (SearchDir.IsNearlyZero())
+	{
+		SearchDir = SelfPawn->GetActorForwardVector();
+	}
+
+	const FVector SearchCenter = MyLoc + SearchDir * 150.f;
+	const FCollisionShape Sphere = FCollisionShape::MakeSphere(DoorDetectionRadius);
+	const FCollisionObjectQueryParams ObjectParams(CayFortressCollision::DestructibleObstacle);
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(SelfPawn);
+
+	// 用极短 Sweep 模拟 Overlap，避免 FOverlapResult 头文件依赖问题
+	TArray<FHitResult> SweepHits;
+	const FVector SweepStart = SearchCenter;
+	const FVector SweepEnd = SearchCenter + FVector(1.f, 0.f, 0.f);
+
+	if (!World->SweepMultiByObjectType(SweepHits, SweepStart, SweepEnd, FQuat::Identity, ObjectParams, Sphere, QueryParams))
+	{
+		return;
+	}
+
+	for (const FHitResult& Hit : SweepHits)
+	{
+		AActor* const HitActor = Hit.GetActor();
+		if (!HitActor || !HitActor->Implements<UDestructibleObstacle>())
+		{
+			continue;
+		}
+
+		if (!IDestructibleObstacle::Execute_CanBeDestroyedByAI(HitActor))
+		{
+			continue;
+		}
+
+		if (IDestructibleObstacle::Execute_IsObstacleDestroyed(HitActor))
+		{
+			continue;
+		}
+
+		CurrentDoorTarget = HitActor;
+		ChaseBlackboardRefreshAccumulator = 0.f;
+		return;
+	}
+}
+
+void AEnemyAIController::ClearDoorTarget()
+{
+	CurrentDoorTarget = nullptr;
+}
+
+bool AEnemyAIController::TryTargetDoorNearPlayer()
+{
+	if (!bHasLastKnownPlayerLocation)
+	{
+		return false;
+	}
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const FCollisionShape Sphere = FCollisionShape::MakeSphere(DoorDetectionRadius * 1.5f);
+	const FCollisionObjectQueryParams ObjectParams(CayFortressCollision::DestructibleObstacle);
+	FCollisionQueryParams QueryParams;
+
+	TArray<FHitResult> SweepHits;
+	const FVector Center = LastKnownPlayerLocation;
+	const FVector SweepEnd = Center + FVector(1.f, 0.f, 0.f);
+
+	if (!World->SweepMultiByObjectType(SweepHits, Center, SweepEnd, FQuat::Identity, ObjectParams, Sphere, QueryParams))
+	{
+		return false;
+	}
+
+	// 找离玩家最后已知位置最近的门
+	AActor* NearestDoor = nullptr;
+	float NearestDistSq = MAX_flt;
+
+	for (const FHitResult& Hit : SweepHits)
+	{
+		AActor* const HitActor = Hit.GetActor();
+		if (!HitActor || !HitActor->Implements<UDestructibleObstacle>())
+		{
+			continue;
+		}
+		if (!IDestructibleObstacle::Execute_CanBeDestroyedByAI(HitActor))
+		{
+			continue;
+		}
+		if (IDestructibleObstacle::Execute_IsObstacleDestroyed(HitActor))
+		{
+			continue;
+		}
+
+		const float DistSq = FVector::DistSquared(Center, HitActor->GetActorLocation());
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			NearestDoor = HitActor;
+		}
+	}
+
+	if (NearestDoor)
+	{
+		CurrentDoorTarget = NearestDoor;
+		ChaseBlackboardRefreshAccumulator = 0.f;
+		return true;
+	}
+
+	return false;
+}
+
+void AEnemyAIController::NotifyDoorDestroyedDuringAttack()
+{
+	ClearDoorTarget();
+	if (CurrentState == EEnemyBehavior::Attack)
+	{
+		SetBehaviorState(EEnemyBehavior::Chase);
+		ChaseBlackboardRefreshAccumulator = 0.f;
 	}
 }
 
@@ -423,6 +633,7 @@ void AEnemyAIController::SetBehaviorState(EEnemyBehavior NewState)
 
 	if (NewState == EEnemyBehavior::Roam)
 	{
+		ClearDoorTarget();
 		FocusTarget = nullptr;
 		bPlayerCurrentlyPerceived = false;
 		Suspicion = 0.f;
@@ -658,6 +869,15 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 	{
 		ApplyLastKnownFromActor(Alex);
 		Suspicion = FMath::Clamp(SuspicionMax * AlertSuspicionFractionAfterChaseLoss, 0.f, SuspicionMax);
+
+		// 丢失视野时优先尝试破坏最近的门，而非直接 Alert
+		if (TryTargetDoorNearPlayer())
+		{
+			SetBehaviorState(EEnemyBehavior::Chase);
+			SyncStateToBlackboard();
+			return;
+		}
+
 		SetBehaviorState(EEnemyBehavior::Alert);
 	}
 

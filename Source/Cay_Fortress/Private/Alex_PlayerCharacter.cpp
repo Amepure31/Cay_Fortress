@@ -10,6 +10,7 @@
 #include "GameFramework/DamageType.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Inventory/FInventoryItemInstance.h"
@@ -100,10 +101,16 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->ProbeSize = 8.f;
+	CameraBoom->ProbeChannel = ECC_Camera;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// 防止弹簧臂碰撞检测打到自己胶囊体导致持续缩回
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = true;
