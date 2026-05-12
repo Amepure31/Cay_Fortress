@@ -68,6 +68,7 @@ void UUI_Equipment::NativeDestruct()
 		BoundEquipment->OnEquipmentChanged.RemoveDynamic(this, &UUI_Equipment::OnEquipmentChanged);
 	}
 
+	HoveredEquipmentSlot.Reset();
 	BoundEquipment = nullptr;
 	PlayerInventory = nullptr;
 	SyncedInventoryWidget = nullptr;
@@ -82,6 +83,7 @@ void UUI_Equipment::BindEquipment(UEquipmentComponent* InEquipment, UInventoryCo
 		BoundEquipment->OnEquipmentChanged.RemoveDynamic(this, &UUI_Equipment::OnEquipmentChanged);
 	}
 
+	HoveredEquipmentSlot = nullptr;
 	BoundEquipment = InEquipment;
 	PlayerInventory = InPlayerInventory;
 	SyncedInventoryWidget = InInventoryUI;
@@ -255,4 +257,32 @@ void UUI_Equipment::OnEquipmentChanged(EEquipmentSlotType SlotType, UInventoryIt
 void UUI_Equipment::OnContainerBackpackSlotRequested(UInventoryItemInstance* ContainerItem)
 {
 	OnContainerBackpackRequested.Broadcast(ContainerItem);
+}
+
+void UUI_Equipment::NotifyEquipmentSlotHover(UUI_EquipmentSlot* EquipmentSlot, bool bHovered)
+{
+	if (bHovered)
+	{
+		HoveredEquipmentSlot = EquipmentSlot;
+	}
+	else if (HoveredEquipmentSlot.Get() == EquipmentSlot)
+	{
+		HoveredEquipmentSlot = nullptr;
+	}
+}
+
+UInventoryItemInstance* UUI_Equipment::GetHoveredEquippedContainerItemInstance() const
+{
+	UUI_EquipmentSlot* HoveredSlotWidget = HoveredEquipmentSlot.Get();
+	if (!HoveredSlotWidget || !BoundEquipment)
+	{
+		return nullptr;
+	}
+
+	UInventoryItemInstance* Eq = BoundEquipment->GetEquippedItem(HoveredSlotWidget->SlotType);
+	if (Eq && Eq->ItemData && Eq->ItemData->ItemData.ArmorStats.bIsContainer)
+	{
+		return Eq;
+	}
+	return nullptr;
 }

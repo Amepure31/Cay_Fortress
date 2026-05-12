@@ -83,6 +83,13 @@ public:
 
 	bool TryEquipFromDrag(UUI_ItemWidget* SourceWidget, EEquipmentSlotType TargetEquipmentSlot);
 
+	/** 由装备槽在鼠标进入/离开时调用；用于交互键仅对当前悬停的容器护甲打开内置背包。 */
+	void NotifyEquipmentSlotHover(UUI_EquipmentSlot* EquipmentSlot, bool bHovered);
+
+	/** 若鼠标正悬停在某装备槽，且该槽已装备 bIsContainer 护甲，则返回该实例，否则 nullptr。 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
+	UInventoryItemInstance* GetHoveredEquippedContainerItemInstance() const;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -99,6 +106,9 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UUI_EquipmentSlot>> SlotWidgets;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UUI_EquipmentSlot> HoveredEquipmentSlot;
 
 	UFUNCTION()
 	void OnEquipmentChanged(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem);

@@ -157,6 +157,12 @@ public:
 	bool RemoveItem(class UInventoryItemInstance* ItemInstance);
 
 	/**
+	 * 从网格与 Items 列表移除实例但不销毁（转移到装备栏、另一库存等仍持有同一 UObject 时使用）。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool DetachItemInstance(class UInventoryItemInstance* ItemInstance);
+
+	/**
 	 * 移除指定位置的物品
 	 * @param SlotX X位置
 	 * @param SlotY Y位置

@@ -48,6 +48,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Container")
 	EContainerType ContainerType;
 
+	/** 是否已被搜刮过（搜刮过的容器不再需要读条） */
+	UPROPERTY(BlueprintReadWrite, Category = "Container")
+	bool bHasBeenLooted;
+
 	/** 打开容器（触发库存打开状态） */
 	UFUNCTION(BlueprintCallable, Category = "Container")
 	void OpenContainer();

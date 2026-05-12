@@ -262,6 +262,21 @@ class UInventoryItemInstance* UInventoryComponent::AddItemWithShapeAtPosition(
 	return NewItem;
 }
 
+bool UInventoryComponent::DetachItemInstance(class UInventoryItemInstance* ItemInstance)
+{
+	if (!ItemInstance) return false;
+	if (!Items.Contains(ItemInstance))
+	{
+		return false;
+	}
+	ReleaseGrid(ItemInstance);
+	Items.Remove(ItemInstance);
+	ItemInstance->SlotX = -1;
+	ItemInstance->SlotY = -1;
+	NotifyInventoryChanged();
+	return true;
+}
+
 bool UInventoryComponent::RemoveItem(class UInventoryItemInstance* ItemInstance)
 {
 	if (!ItemInstance) return false;

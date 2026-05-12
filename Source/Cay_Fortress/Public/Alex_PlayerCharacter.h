@@ -19,6 +19,7 @@ class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexAttackMontageFinished, bool, bInterrupted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexReloadMontageFinished, bool, bInterrupted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexDodgeMontageFinished, bool, bInterrupted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexHealthChanged, float, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexStaminaChanged, float, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlexHungerChanged, float, NewValue);
@@ -73,6 +74,9 @@ public:
 	float MaxStamina;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
+	float StaminaRecoveryRate;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
 	float Hunger;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "1", UIMin = "1"))
@@ -92,6 +96,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
 	float MaxCarryWeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Search", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float SearchAbilityCoefficient = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0", ClampMax = "600", UIMin = "0", UIMax = "600"))
 	float MoveSpeed;
@@ -220,6 +227,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Animation")
 	TObjectPtr<UAnimMontage> RifleStyleReloadMontage;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Animation")
+	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge", meta = (ClampMin = "0", ClampMax = "100", UIMin = "0", UIMax = "100"))
+	float DodgeStaminaCost;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge", meta = (ClampMin = "0", ClampMax = "2000", UIMin = "0", UIMax = "2000"))
+	float DodgeImpulseStrength;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge", meta = (ClampMin = "0", ClampMax = "3", UIMin = "0", UIMax = "3"))
+	float DodgeCooldownSeconds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge", meta = (ClampMin = "0.25", ClampMax = "4.0", UIMin = "0.25", UIMax = "4.0"))
+	float DodgeMontagePlayRate;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	FName DodgeMontageStartSectionName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Dodge")
+	bool bDodgeMontageDoNotStopAllMontages;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Audio")
 	TObjectPtr<USoundBase> UniversalGunFireSound;
 
@@ -231,6 +259,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FOnAlexReloadMontageFinished OnReloadMontageFinished;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat")
+	FOnAlexDodgeMontageFinished OnDodgeMontageFinished;
 
 	UPROPERTY(BlueprintAssignable, Category = "Character|Stats")
 	FOnAlexHealthChanged OnHealthChanged;
@@ -275,6 +306,15 @@ protected:
 	TObjectPtr<UAnimMontage> ActiveAttackMontageGuard;
 	TObjectPtr<UAnimMontage> ActiveReloadMontageGuard;
 
+	bool bDodgeMontagePlaying = false;
+	bool bIsInvincible = false;
+	bool bDodgeComboAvailable = false;
+	bool bDodgeIsSection2 = false;
+	float LastDodgeTime = -1000.f;
+	float DodgeComboWindowSeconds = 1.0f;
+	TObjectPtr<UAnimMontage> ActiveDodgeMontageGuard;
+	FTimerHandle DodgeComboCloseTimer;
+
 	void LogAnimMontageSkeletonMismatches() const;
 	void UpdateAimPistolVisual();
 	void UpdateAimRifleVisual();
@@ -282,7 +322,10 @@ protected:
 	void UpdateAimPresentation(float DeltaTime);
 	void HealStaleAttackMontageGuard(bool bLogIfHealed);
 	void HealStaleReloadMontageGuard(bool bLogIfHealed);
+	void HealStaleDodgeMontageGuard(bool bLogIfHealed);
 	void HandleAttackMontageBlendOut(UAnimMontage* Montage, bool bInterrupted);
+	void HandleDodgeMontageBlendOut(UAnimMontage* Montage, bool bInterrupted);
+	void CloseDodgeComboWindow();
 	void ApplyAimMovementConstraints();
 	void TickStatDrainAndEncumbrance(float DeltaTime);
 	bool IsAdsRangedFullAutoEnabled() const;
@@ -297,9 +340,11 @@ protected:
 	UAnimMontage* SelectMeleeAttackMontage() const;
 	bool PlayAttackMontage(UAnimMontage* Montage, bool bStopAllMontagesWhenPlaying, bool bIsMeleeAttackMontage);
 	bool PlayReloadMontage(UAnimMontage* Montage, bool bStopAllMontagesWhenPlaying);
+	bool PlayDodgeMontage(UAnimMontage* Montage);
 	void HandleAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void HandleReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void HandleReloadMontageBlendOut(UAnimMontage* Montage, bool bInterrupted);
+	void HandleDodgeMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	bool CanActiveWeaponConsumeRangedRound() const;
 	void ConsumeActiveWeaponMagazineRound();
@@ -484,9 +529,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool TryReload();
 
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	bool TryDodge();
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsAttackMontagePlaying() const { return bAttackMontagePlaying; }
 
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsReloadMontagePlaying() const { return bReloadMontagePlaying; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool IsDodgeMontagePlaying() const { return bDodgeMontagePlaying; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool IsInvincible() const { return bIsInvincible; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
+	float GetDodgeCooldownRemaining() const;
 };

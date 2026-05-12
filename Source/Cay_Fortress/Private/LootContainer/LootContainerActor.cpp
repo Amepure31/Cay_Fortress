@@ -240,6 +240,7 @@ ALootContainerActor::ALootContainerActor()
 	ContainerGridWidth = 6;
 	ContainerGridHeight = 5;
 	ContainerType = EContainerType::FoodCrate;
+	bHasBeenLooted = false;
 }
 
 void ALootContainerActor::BeginPlay()
@@ -278,6 +279,8 @@ bool ALootContainerActor::IsContainerOpen() const
 
 void ALootContainerActor::RefreshItemsByRoom_Implementation()
 {
+	bHasBeenLooted = false;
+
 	if (!InventoryComponent)
 	{
 		return;

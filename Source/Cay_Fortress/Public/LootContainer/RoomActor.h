@@ -137,7 +137,4 @@ protected:
 	UPROPERTY(Transient)
 	TSet<TWeakObjectPtr<ALootContainerActor>> EverOpenedContainers;
 
-	UPROPERTY(Transient)
-	bool bHasShownAllContainersOpenedPrompt;
-
 };

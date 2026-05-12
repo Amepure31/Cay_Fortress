@@ -437,6 +437,11 @@ void UUI_Inventory::NativeDestruct()
 
 void UUI_Inventory::BindInventory(UInventoryComponent* InInventory)
 {
+	if (BoundInventory)
+	{
+		BoundInventory->OnInventoryChanged.RemoveDynamic(this, &UUI_Inventory::UpdateInventory);
+	}
+
 	BoundInventory = InInventory;
 	bHasLastHoverCursorPosition = false;
 	

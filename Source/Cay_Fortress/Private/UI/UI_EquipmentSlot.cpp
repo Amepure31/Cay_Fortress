@@ -431,12 +431,20 @@ void UUI_EquipmentSlot::NativeOnMouseEnter(const FGeometry& InGeometry, const FP
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
 	SetHoverActive(true);
+	if (OwningPanel)
+	{
+		OwningPanel->NotifyEquipmentSlotHover(this, true);
+	}
 }
 
 void UUI_EquipmentSlot::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
 	SetHoverActive(false);
+	if (OwningPanel)
+	{
+		OwningPanel->NotifyEquipmentSlotHover(this, false);
+	}
 }
 
 bool UUI_EquipmentSlot::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

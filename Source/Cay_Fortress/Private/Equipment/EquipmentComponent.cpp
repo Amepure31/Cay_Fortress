@@ -81,7 +81,10 @@ bool UEquipmentComponent::EquipItemFromInventory(UInventoryComponent* SourceInve
 		}
 	}
 
-	SourceInventory->RemoveItem(Item);
+	if (!SourceInventory->DetachItemInstance(Item))
+	{
+		return false;
+	}
 
 	Item->SlotX = -1;
 	Item->SlotY = -1;
@@ -89,7 +92,6 @@ bool UEquipmentComponent::EquipItemFromInventory(UInventoryComponent* SourceInve
 
 	OnEquipmentChanged.Broadcast(Slot, Item);
 
-	// Initialize container backpack inventory if this is a container armor item
 	if (Item->ItemData && Item->ItemData->ItemData.ArmorStats.bIsContainer)
 	{
 		const FArmorItemStats& AS = Item->ItemData->ItemData.ArmorStats;

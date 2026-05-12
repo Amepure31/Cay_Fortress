@@ -120,6 +120,7 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	MaxHealth = 100.0f;
 	Stamina = 100.0f;
 	MaxStamina = 100.0f;
+	StaminaRecoveryRate = 5.0f;
 	Hunger = 100.0f;
 	MaxHunger = 100.0f;
 	HungerDrainRate = 0.1f;
@@ -160,6 +161,12 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	MeleeMontageStartSectionName = NAME_None;
 	MeleeMontagePlayRate = 1.45f;
 	MeleeMontageLeadInTrimSeconds = 0.f;
+	DodgeStaminaCost = 25.0f;
+	DodgeImpulseStrength = 600.0f;
+	DodgeCooldownSeconds = 0.5f;
+	DodgeMontagePlayRate = 1.0f;
+	DodgeMontageStartSectionName = TEXT("Dodging_1");
+	bDodgeMontageDoNotStopAllMontages = true;
 	DefaultCameraArmLength = 300.f;
 	DefaultFieldOfView = 90.f;
 	CurrentCameraArmLengthDisplay = 300.f;
@@ -228,6 +235,13 @@ void AAlex_PlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 				AnimInst->Montage_SetEndDelegate(EmptyEndDelegate, ActiveReloadMontageGuard.Get());
 				AnimInst->Montage_SetBlendingOutDelegate(EmptyBlendDelegate, ActiveReloadMontageGuard.Get());
 			}
+			if (ActiveDodgeMontageGuard)
+			{
+				FOnMontageEnded EmptyEndDelegate;
+				FOnMontageBlendingOutStarted EmptyBlendDelegate;
+				AnimInst->Montage_SetEndDelegate(EmptyEndDelegate, ActiveDodgeMontageGuard.Get());
+				AnimInst->Montage_SetBlendingOutDelegate(EmptyBlendDelegate, ActiveDodgeMontageGuard.Get());
+			}
 		}
 	}
 
@@ -235,8 +249,12 @@ void AAlex_PlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	bAttackMontagePlaying = false;
 	ActiveReloadMontageGuard = nullptr;
 	bReloadMontagePlaying = false;
+	ActiveDodgeMontageGuard = nullptr;
+	bDodgeMontagePlaying = false;
+	bIsInvincible = false;
 	OnAttackMontageFinished.Clear();
 	OnReloadMontageFinished.Clear();
+	OnDodgeMontageFinished.Clear();
 	OnHealthChanged.Clear();
 	OnStaminaChanged.Clear();
 	OnHungerChanged.Clear();
@@ -321,6 +339,7 @@ void AAlex_PlayerCharacter::LogAnimMontageSkeletonMismatches() const
 	CheckMontage(RifleStyleFireMontage.Get(), TEXT("RifleFire"));
 	CheckMontage(PistolReloadMontage.Get(), TEXT("PistolReload"));
 	CheckMontage(RifleStyleReloadMontage.Get(), TEXT("RifleReload"));
+	CheckMontage(DodgeMontage.Get(), TEXT("Dodge"));
 }
 
 UInventoryComponent* AAlex_PlayerCharacter::GetInventory() const
@@ -369,6 +388,8 @@ void AAlex_PlayerCharacter::Heal(float Amount)
 
 float AAlex_PlayerCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
+	if (bIsInvincible) return 0.0f;
+
 	if (Damage > 0.0f)
 	{
 		const float ArmorVal = Equipment ? Equipment->GetTotalArmorValue() : 0.0f;
@@ -521,6 +542,12 @@ void AAlex_PlayerCharacter::Tick(float DeltaTime)
 
 	if (PistolADSMeleeSuppressRemain > 0.f)
 		PistolADSMeleeSuppressRemain = FMath::Max(0.f, PistolADSMeleeSuppressRemain - DeltaTime);
+
+	if (bDodgeMontagePlaying)
+	{
+		const FVector Offset = GetActorForwardVector() * DodgeImpulseStrength * DeltaTime;
+		AddActorWorldOffset(FVector(Offset.X, Offset.Y, 0.f), true);
+	}
 }
 
 float AAlex_PlayerCharacter::GetRunSpeed() const { return RunSpeed; }
@@ -999,6 +1026,32 @@ void AAlex_PlayerCharacter::HealStaleReloadMontageGuard(const bool bLogIfHealed)
 	}
 }
 
+void AAlex_PlayerCharacter::HealStaleDodgeMontageGuard(const bool bLogIfHealed)
+{
+	if (!bDodgeMontagePlaying) return;
+	USkeletalMeshComponent* SkelMesh = GetMesh();
+	UAnimInstance* AnimInst = SkelMesh ? SkelMesh->GetAnimInstance() : nullptr;
+	if (!AnimInst || !ActiveDodgeMontageGuard || !AnimInst->Montage_IsActive(ActiveDodgeMontageGuard))
+	{
+		if (bLogIfHealed && CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0)
+			UE_LOG(LogAlexCombat, Warning, TEXT("%sDODGE HEAL stale guard"), CayFortressCombatLog::Prefix());
+		ActiveDodgeMontageGuard = nullptr;
+		bDodgeMontagePlaying = false;
+		bIsInvincible = false;
+		bDodgeComboAvailable = false;
+	}
+}
+
+void AAlex_PlayerCharacter::HandleDodgeMontageBlendOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (Montage && ActiveDodgeMontageGuard == Montage) ActiveDodgeMontageGuard = nullptr;
+	if (bInterrupted)
+	{
+		bDodgeMontagePlaying = false;
+		bIsInvincible = false;
+	}
+}
+
 void AAlex_PlayerCharacter::HandleAttackMontageBlendOut(UAnimMontage* Montage, bool bInterrupted)
 {
 	if (Montage && ActiveAttackMontageGuard == Montage) ActiveAttackMontageGuard = nullptr;
@@ -1073,6 +1126,83 @@ bool AAlex_PlayerCharacter::PlayReloadMontage(UAnimMontage* Montage, const bool 
 	return true;
 }
 
+bool AAlex_PlayerCharacter::PlayDodgeMontage(UAnimMontage* Montage)
+{
+	if (!Montage || !GetMesh()) return false;
+
+	UAnimInstance* AnimInst = GetMesh()->GetAnimInstance();
+	if (!AnimInst) return false;
+
+	const bool bStopAll = !bDodgeMontageDoNotStopAllMontages;
+	const float PlayLength = AnimInst->Montage_Play(Montage, DodgeMontagePlayRate, EMontagePlayReturnType::MontageLength, 0.f, bStopAll);
+	if (PlayLength <= 0.f) return false;
+
+	ActiveDodgeMontageGuard = Montage;
+	bDodgeMontagePlaying = true;
+	bIsInvincible = true;
+	bDodgeComboAvailable = false;
+	bDodgeIsSection2 = false;
+
+	if (!DodgeMontageStartSectionName.IsNone() && Montage->GetSectionIndex(DodgeMontageStartSectionName) != INDEX_NONE)
+	{
+		AnimInst->Montage_JumpToSection(DodgeMontageStartSectionName, Montage);
+		AnimInst->Montage_SetNextSection(DodgeMontageStartSectionName, NAME_None);
+	}
+
+	if (GetWorld())
+		LastDodgeTime = GetWorld()->GetTimeSeconds();
+
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &AAlex_PlayerCharacter::HandleDodgeMontageEnded);
+	AnimInst->Montage_SetEndDelegate(EndDelegate, Montage);
+
+	FOnMontageBlendingOutStarted BlendOutDelegate;
+	BlendOutDelegate.BindUObject(this, &AAlex_PlayerCharacter::HandleDodgeMontageBlendOut);
+	AnimInst->Montage_SetBlendingOutDelegate(BlendOutDelegate, Montage);
+
+	return true;
+}
+
+void AAlex_PlayerCharacter::HandleDodgeMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (Montage && ActiveDodgeMontageGuard == Montage) ActiveDodgeMontageGuard = nullptr;
+
+	// Dodging_1 自然结束 → 开连招窗口
+	if (!bDodgeIsSection2 && !bInterrupted)
+	{
+		bDodgeMontagePlaying = false;
+		bDodgeComboAvailable = true;
+		if (GetWorld())
+			GetWorld()->GetTimerManager().SetTimer(DodgeComboCloseTimer, this,
+				&AAlex_PlayerCharacter::CloseDodgeComboWindow, DodgeComboWindowSeconds, false);
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, TEXT("Combo window OPEN"));
+		return;
+	}
+
+	// Dodging_2 结束 或 中断 → 全清
+	bDodgeMontagePlaying = false;
+	bIsInvincible = false;
+	bDodgeComboAvailable = false;
+	bDodgeIsSection2 = false;
+
+	OnDodgeMontageFinished.Broadcast(bInterrupted);
+}
+
+void AAlex_PlayerCharacter::CloseDodgeComboWindow()
+{
+	bDodgeComboAvailable = false;
+	bIsInvincible = false;
+	GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Orange, TEXT("Combo window CLOSED"));
+	OnDodgeMontageFinished.Broadcast(false);
+}
+
+float AAlex_PlayerCharacter::GetDodgeCooldownRemaining() const
+{
+	if (!GetWorld()) return 0.f;
+	const float Elapsed = GetWorld()->GetTimeSeconds() - LastDodgeTime;
+	return FMath::Max(0.f, DodgeCooldownSeconds - Elapsed);
+}
+
 bool AAlex_PlayerCharacter::TryReload()
 {
 	const bool bDiag = CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0;
@@ -1101,6 +1231,91 @@ bool AAlex_PlayerCharacter::TryReload()
 	const bool bStopAll = !bReloadMontageDoNotStopAllMontages;
 	SetPrimaryFireHeld(false);
 	return PlayReloadMontage(Montage, bStopAll);
+}
+
+bool AAlex_PlayerCharacter::TryDodge()
+{
+	const bool bDiag = CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0;
+	HealStaleDodgeMontageGuard(bDiag);
+	HealStaleAttackMontageGuard(bDiag);
+	HealStaleReloadMontageGuard(bDiag);
+
+	// 翻滚中：预触发 Dodging_2
+	if (bDodgeMontagePlaying && !bDodgeIsSection2)
+	{
+		if (USkeletalMeshComponent* SkelMesh = GetMesh())
+			if (UAnimInstance* AnimInst = SkelMesh->GetAnimInstance())
+				AnimInst->Montage_SetNextSection(DodgeMontageStartSectionName, TEXT("Dodging_2"));
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, TEXT("Combo QUEUED"));
+		return true;
+	}
+
+	// 连招窗口内：播放 Dodging_2
+	if (bDodgeComboAvailable)
+	{
+		if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(DodgeComboCloseTimer);
+		bDodgeComboAvailable = false;
+
+		UAnimMontage* Montage = DodgeMontage.Get();
+		if (!Montage) { CloseDodgeComboWindow(); return false; }
+		if (Montage->GetSectionIndex(TEXT("Dodging_2")) == INDEX_NONE) { CloseDodgeComboWindow(); return false; }
+
+		UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+		if (!AnimInst) { CloseDodgeComboWindow(); return false; }
+
+		const bool bStopAll = !bDodgeMontageDoNotStopAllMontages;
+		const float PlayLength = AnimInst->Montage_Play(Montage, DodgeMontagePlayRate, EMontagePlayReturnType::MontageLength, 0.f, bStopAll);
+		if (PlayLength <= 0.f) { CloseDodgeComboWindow(); return false; }
+
+		ActiveDodgeMontageGuard = Montage;
+		bDodgeMontagePlaying = true;
+		bDodgeIsSection2 = true;
+
+		AnimInst->Montage_JumpToSection(TEXT("Dodging_2"), Montage);
+
+		FOnMontageEnded EndDelegate;
+		EndDelegate.BindUObject(this, &AAlex_PlayerCharacter::HandleDodgeMontageEnded);
+		AnimInst->Montage_SetEndDelegate(EndDelegate, Montage);
+
+		FOnMontageBlendingOutStarted BlendOutDelegate;
+		BlendOutDelegate.BindUObject(this, &AAlex_PlayerCharacter::HandleDodgeMontageBlendOut);
+		AnimInst->Montage_SetBlendingOutDelegate(BlendOutDelegate, Montage);
+
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, TEXT("Dodging_2 PLAYING"));
+		return true;
+	}
+
+	if (GetInventory() && GetInventory()->IsInventoryOpen()) return false;
+
+	if (bDodgeMontagePlaying) return false;
+	if (bAttackMontagePlaying) return false;
+	if (bReloadMontagePlaying) return false;
+
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (MoveComp && MoveComp->MovementMode != MOVE_Walking) return false;
+
+	if (DodgeCooldownSeconds > KINDA_SMALL_NUMBER && GetWorld())
+	{
+		if (GetWorld()->GetTimeSeconds() - LastDodgeTime < DodgeCooldownSeconds) return false;
+	}
+
+	if (!ConsumeStamina(DodgeStaminaCost)) return false;
+
+	UAnimMontage* Montage = DodgeMontage.Get();
+	if (!Montage) return false;
+
+	FVector DodgeDirection = GetLastMovementInputVector();
+	if (DodgeDirection.IsNearlyZero())
+		DodgeDirection = GetActorForwardVector();
+	DodgeDirection.Z = 0.f;
+	DodgeDirection.Normalize();
+
+	if (bIsAiming)
+		SetAiming(false);
+
+	SetActorRotation(DodgeDirection.Rotation());
+
+	return PlayDodgeMontage(Montage);
 }
 
 bool AAlex_PlayerCharacter::TryAttack()
@@ -1179,6 +1394,13 @@ void AAlex_PlayerCharacter::HandleReloadMontageEnded(UAnimMontage* Montage, bool
 
 void AAlex_PlayerCharacter::TickStatDrainAndEncumbrance(float DeltaTime)
 {
+	// --- Stamina recovery ---
+	if (StaminaRecoveryRate > 0.0f && !bDodgeMontagePlaying && !bAttackMontagePlaying)
+	{
+		const float Rate = bRunInputHeld ? StaminaRecoveryRate * 0.3f : StaminaRecoveryRate;
+		RecoverStamina(Rate * DeltaTime);
+	}
+
 	// --- Hunger / Hydration passive drain ---
 	if (HungerDrainRate > 0.0f)
 		SetHunger(Hunger - HungerDrainRate * DeltaTime);

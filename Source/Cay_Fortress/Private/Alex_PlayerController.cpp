@@ -1,6 +1,7 @@
 #include "Alex_PlayerController.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/Engine.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Alex_PlayerCharacter.h"
@@ -18,8 +19,10 @@
 #include "UI/UI_AimPoint.h"
 #include "UI/UI_CharacterProperty.h"
 #include "UI/UI_ContainerBackpack.h"
+#include "UI/UI_LootProgressBar.h"
 #include "Inventory/FInventoryItemInstance.h"
 #include "Inventory/InventoryItemDataAsset.h"
+#include "Inventory/InventoryItemRarity.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
@@ -34,6 +37,11 @@ AAlex_PlayerController::AAlex_PlayerController()
 	PlayerInteractComponent = nullptr;
 	bLootInteractionActive = false;
 	bInventoryOpenedByLootInteraction = false;
+	LootContainerOpenTime = 0.0f;
+	bIsLootProgressActive = false;
+	bLootRunSpeedUp = false;
+	LootProgressElapsed = 0.0f;
+	LootProgressWidget = nullptr;
 	bIsToggling = false;
 	LastToggleTime = 0.0f;
 	ContainerBackpackWidget = nullptr;
@@ -54,6 +62,7 @@ void AAlex_PlayerController::BeginPlay()
 	AttachToPawnInventoryAndEquipment(GetPawn());
 	EnsureAimPointWidgetCreated();
 	EnsureAmmoHudWidgetCreated();
+	EnsureCharacterPropertyWidgetCreated();
 }
 
 void AAlex_PlayerController::OnPossess(APawn* InPawn)
@@ -62,6 +71,7 @@ void AAlex_PlayerController::OnPossess(APawn* InPawn)
 	AttachToPawnInventoryAndEquipment(InPawn);
 	EnsureAimPointWidgetCreated();
 	EnsureAmmoHudWidgetCreated();
+	EnsureCharacterPropertyWidgetCreated();
 }
 
 void AAlex_PlayerController::OnUnPossess()
@@ -93,11 +103,16 @@ void AAlex_PlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &AAlex_PlayerController::AttackReleased);
 		}
 		if (InteractAction)
-			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Interact);
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAlex_PlayerController::InteractStarted);
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Completed, this, &AAlex_PlayerController::InteractCompleted);
+		}
 		if (InventoryAction)
 			EnhancedInputComponent->BindAction(InventoryAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ToggleInventory);
 		if (ReloadAction)
 			EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ReloadPressed);
+		if (DodgeAction)
+			EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Dodge);
 	}
 	}
 
@@ -124,6 +139,48 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 			CharProp->RefreshStatusDisplay();
 	}
 
+	// --- Loot progress (hold-to-interact) ---
+	if (bIsLootProgressActive)
+	{
+		if (!LootProgressTarget.IsValid())
+		{
+			CancelLootProgress();
+		}
+		else
+		{
+			if (!PlayerInteractComponent)
+			{
+				if (APawn* ControlledPawn = GetPawn())
+					PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
+			}
+			AActor* CurrentTarget = PlayerInteractComponent ? PlayerInteractComponent->GetCurrentInteractable() : nullptr;
+			if (!CurrentTarget || Cast<ALootContainerActor>(CurrentTarget) != LootProgressTarget.Get())
+			{
+				CancelLootProgress();
+			}
+			else
+			{
+				const float SpeedMultiplier = bLootRunSpeedUp ? LootSpeedUpMultiplier : 1.0f;
+				LootProgressElapsed += DeltaSeconds * SpeedMultiplier;
+
+				const float Remaining = LootHoldDuration - LootProgressElapsed;
+				const float Progress = FMath::Clamp(LootProgressElapsed / FMath::Max(LootHoldDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+
+				if (UUI_LootProgressBar* Bar = Cast<UUI_LootProgressBar>(LootProgressWidget))
+				{
+					Bar->SetProgress(Progress);
+					Bar->SetCountdownValue(Remaining);
+				}
+
+				if (LootProgressElapsed >= LootHoldDuration)
+				{
+					CompleteLootProgress();
+					return;
+				}
+			}
+		}
+	}
+
 	if (!bLootInteractionActive) return;
 
 	if (!PlayerInteractComponent)
@@ -135,11 +192,20 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 
 	AActor* CurrentTarget = PlayerInteractComponent->GetCurrentInteractable();
 	if (Cast<ALootContainerActor>(CurrentTarget) != ActiveLootContainer.Get())
+	{
+		const float TimeSinceOpen = GetWorld() ? GetWorld()->GetTimeSeconds() - LootContainerOpenTime : 1.0f;
+		if (ActiveLootContainer.IsValid() && ActiveLootContainer->GetInventoryComponent() && ActiveLootContainer->GetInventoryComponent()->Items.Num() > 0 && TimeSinceOpen < 0.5f)
+			return;
 		CloseLootContainerUI(true);
+	}
 }
 
 void AAlex_PlayerController::Move(const FInputActionValue& Value)
 {
+	if (bIsLootProgressActive || bLootInteractionActive) return;
+
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+		if (PlayerCharacter->IsDodgeMontagePlaying()) return;
 	FVector2D MovementVector = Value.Get<FVector2D>();
 	APawn* ControlledPawn = GetPawn();
 	if (ControlledPawn)
@@ -165,22 +231,32 @@ void AAlex_PlayerController::Look(const FInputActionValue& Value)
 
 void AAlex_PlayerController::Jump()
 {
+	if (bIsLootProgressActive) return;
+
+	if (bLootInteractionActive)
+	{
+		TransferAllItemsFromContainer();
+		return;
+	}
+
 	if (GetCharacter()) GetCharacter()->Jump();
 }
 
 void AAlex_PlayerController::Run(const FInputActionValue& Value)
 {
 	if (!Value.Get<bool>()) return;
+	if (bIsLootProgressActive) bLootRunSpeedUp = true;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
 	{
 		PlayerCharacter->SetRunInputHeld(true);
-		if (PlayerCharacter->IsAiming()) return;
-		PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetRunSpeed());
+		if (!bIsLootProgressActive && !PlayerCharacter->IsAiming())
+			PlayerCharacter->SetTargetMoveSpeed(PlayerCharacter->GetRunSpeed());
 	}
 }
 
 void AAlex_PlayerController::StopRun()
 {
+	bLootRunSpeedUp = false;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetCharacter()))
 	{
 		PlayerCharacter->SetRunInputHeld(false);
@@ -190,6 +266,7 @@ void AAlex_PlayerController::StopRun()
 
 void AAlex_PlayerController::AimStarted(const FInputActionValue& Value)
 {
+	if (bIsLootProgressActive) return;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 		PlayerCharacter->SetAiming(true);
 }
@@ -202,6 +279,7 @@ void AAlex_PlayerController::AimStopped(const FInputActionValue& Value)
 
 void AAlex_PlayerController::AttackPressed(const FInputActionValue& Value)
 {
+	if (bIsLootProgressActive) return;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 	{
 		PlayerCharacter->SetPrimaryFireHeld(true);
@@ -217,11 +295,21 @@ void AAlex_PlayerController::AttackReleased(const FInputActionValue& Value)
 
 void AAlex_PlayerController::ReloadPressed(const FInputActionValue& Value)
 {
+	if (bIsLootProgressActive) return;
 	// OnRKeyPressed handles R when UI is open
 	if (bShowMouseCursor) return;
 
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 		PlayerCharacter->TryReload();
+}
+
+void AAlex_PlayerController::Dodge()
+{
+	if (bIsLootProgressActive) return;
+	if (bShowMouseCursor) return;
+
+	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
+		PlayerCharacter->TryDodge();
 }
 
 
@@ -257,9 +345,16 @@ void AAlex_PlayerController::DrawDebugAccumulatedHitCount() const
 	else GEngine->RemoveOnScreenDebugMessage(LastDamageOnScreenKey);
 }
 
-void AAlex_PlayerController::Interact()
+void AAlex_PlayerController::InteractStarted()
 {
-	if (bLootInteractionActive) { CloseLootContainerUI(true); return; }
+	if (bLootInteractionActive)
+	{
+		const float TimeSinceOpen = GetWorld() ? GetWorld()->GetTimeSeconds() - LootContainerOpenTime : 1.0f;
+		if (ActiveLootContainer.IsValid() && ActiveLootContainer->GetInventoryComponent() && ActiveLootContainer->GetInventoryComponent()->Items.Num() > 0 && TimeSinceOpen < 0.5f)
+			return;
+		CloseLootContainerUI(true);
+		return;
+	}
 
 	// When UI is open, Interact key opens/closes container backpacks
 	if (bShowMouseCursor)
@@ -280,15 +375,10 @@ void AAlex_PlayerController::Interact()
 			if (UUI_ContainerBackpack* CUI = Cast<UUI_ContainerBackpack>(ContainerBackpackWidget))
 				ContainerItem = CUI->GetHoveredItemInstance();
 		}
-		if (!ContainerItem && EquipmentComponent)
+		if (!ContainerItem)
 		{
-			static const EEquipmentSlotType Slots[] = {EEquipmentSlotType::Head, EEquipmentSlotType::Chest, EEquipmentSlotType::Backpack};
-			for (const EEquipmentSlotType S : Slots)
-			{
-				UInventoryItemInstance* Eq = EquipmentComponent->GetEquippedItem(S);
-				if (Eq && Eq->ItemData && Eq->ItemData->ItemData.ArmorStats.bIsContainer)
-					{ ContainerItem = Eq; break; }
-			}
+			if (UUI_Equipment* EqUI = Cast<UUI_Equipment>(EquipmentWidget))
+				ContainerItem = EqUI->GetHoveredEquippedContainerItemInstance();
 		}
 		if (ContainerItem)
 		{
@@ -302,12 +392,148 @@ void AAlex_PlayerController::Interact()
 		if (APawn* ControlledPawn = GetPawn())
 			PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
 	}
-	if (PlayerInteractComponent && PlayerInteractComponent->TryInteract())
+	if (!PlayerInteractComponent) return;
+
+	AActor* Target = PlayerInteractComponent->GetCurrentInteractable();
+	if (ALootContainerActor* LootContainer = Cast<ALootContainerActor>(Target))
 	{
-		AActor* Target = PlayerInteractComponent->GetCurrentInteractable();
-		if (ALootContainerActor* LootContainer = Cast<ALootContainerActor>(Target))
+		if (LootContainer->bHasBeenLooted)
 			OpenLootContainerUI(LootContainer);
+		else
+			StartLootProgress(LootContainer);
+		return;
 	}
+
+	// Non-container interactable: instant interaction
+	PlayerInteractComponent->TryInteract();
+}
+
+void AAlex_PlayerController::InteractCompleted()
+{
+	if (!bIsLootProgressActive) return;
+
+	if (LootProgressElapsed >= LootHoldDuration)
+		CompleteLootProgress();
+	else
+		CancelLootProgress();
+}
+
+void AAlex_PlayerController::StartLootProgress(ALootContainerActor* Container)
+{
+	if (!Container || !LootProgressBarWidgetClass) return;
+
+	bIsLootProgressActive = true;
+	LootProgressElapsed = 0.0f;
+	LootProgressTarget = Container;
+	bLootRunSpeedUp = false;
+
+	// Calculate loot duration: 2.0 * searchMultiplier
+	int32 HighestRarity = 0;
+	if (UInventoryComponent* ContainerInv = Container->GetInventoryComponent())
+	{
+		for (const TObjectPtr<UInventoryItemInstance>& Item : ContainerInv->Items)
+		{
+			if (Item && Item->ItemData)
+			{
+				const int32 RarityVal = static_cast<int32>(Item->ItemData->ItemData.Rarity);
+				if (RarityVal > HighestRarity) HighestRarity = RarityVal;
+			}
+		}
+	}
+
+	const float RarityInfluence = 1.0f + 1.5f * static_cast<float>(HighestRarity);
+	float SearchMultiplier = RarityInfluence;
+	if (AAlex_PlayerCharacter* PlayerChar = Cast<AAlex_PlayerCharacter>(GetPawn()))
+		SearchMultiplier += PlayerChar->SearchAbilityCoefficient;
+
+	LootHoldDuration = 2.0f * SearchMultiplier;
+
+	// Stop character movement
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		if (UCharacterMovementComponent* MoveComp = ControlledPawn->FindComponentByClass<UCharacterMovementComponent>())
+			MoveComp->Velocity = FVector::ZeroVector;
+	}
+
+	// Check if run key is already held
+	if (AAlex_PlayerCharacter* PlayerChar = Cast<AAlex_PlayerCharacter>(GetPawn()))
+	{
+		if (PlayerChar->IsRunInputHeld())
+			bLootRunSpeedUp = true;
+	}
+
+	LootProgressWidget = CreateWidget<UUserWidget>(this, LootProgressBarWidgetClass);
+	if (LootProgressWidget)
+	{
+		LootProgressWidget->AddToViewport(100);
+		if (UUI_LootProgressBar* Bar = Cast<UUI_LootProgressBar>(LootProgressWidget))
+		{
+			Bar->SetProgress(0.0f);
+			Bar->SetCountdownValue(LootHoldDuration);
+		}
+	}
+}
+
+void AAlex_PlayerController::CancelLootProgress()
+{
+	bIsLootProgressActive = false;
+	bLootRunSpeedUp = false;
+	LootProgressElapsed = 0.0f;
+	LootProgressTarget = nullptr;
+
+	if (LootProgressWidget)
+	{
+		LootProgressWidget->RemoveFromParent();
+		LootProgressWidget = nullptr;
+	}
+}
+
+void AAlex_PlayerController::CompleteLootProgress()
+{
+	ALootContainerActor* Container = LootProgressTarget.Get();
+
+	bIsLootProgressActive = false;
+	bLootRunSpeedUp = false;
+	LootProgressElapsed = 0.0f;
+	LootProgressTarget = nullptr;
+
+	if (LootProgressWidget)
+	{
+		LootProgressWidget->RemoveFromParent();
+		LootProgressWidget = nullptr;
+	}
+
+	if (Container)
+	{
+		Container->bHasBeenLooted = true;
+		OpenLootContainerUI(Container);
+	}
+}
+
+void AAlex_PlayerController::TransferAllItemsFromContainer()
+{
+	ALootContainerActor* Container = ActiveLootContainer.Get();
+	if (!Container) return;
+
+	UInventoryComponent* ContainerInv = Container->GetInventoryComponent();
+	if (!ContainerInv || !InventoryComponent) return;
+
+	TArray<UInventoryItemInstance*> ItemsToTransfer;
+	for (const TObjectPtr<UInventoryItemInstance>& Item : ContainerInv->Items)
+	{
+		if (Item) ItemsToTransfer.Add(Item);
+	}
+
+	for (UInventoryItemInstance* Item : ItemsToTransfer)
+	{
+		if (InventoryComponent->AddExistingItemInstance(Item))
+			ContainerInv->DetachItemInstance(Item);
+	}
+
+	if (UUI_LootContainer* LootUI = Cast<UUI_LootContainer>(LootContainerWidget))
+		LootUI->UpdateInventory();
+	if (UUI_Inventory* InvUI = Cast<UUI_Inventory>(InventoryWidget))
+		InvUI->UpdateInventory();
 }
 
 bool AAlex_PlayerController::EnsureInventoryUIVisible(bool bShowEquipment)
@@ -359,6 +585,7 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 	bLootInteractionActive = true;
 	ActiveLootContainer = LootContainer;
 	bInventoryOpenedByLootInteraction = !bInventoryWasOpenBeforeLootInteraction;
+	LootContainerOpenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 
 	if (!EnsureInventoryUIVisible(false)) { bLootInteractionActive = false; ActiveLootContainer = nullptr; bInventoryOpenedByLootInteraction = false; return; }
 
@@ -382,7 +609,8 @@ void AAlex_PlayerController::OpenLootContainerUI(ALootContainerActor* LootContai
 	InputMode.SetHideCursorDuringCapture(false);
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
-	SetIgnoreLookInput(true);
+	// Look ignore is already applied in OnInventoryToggled(true) from EnsureInventoryUIVisible;
+	// stacking SetIgnoreLookInput(true) again here breaks mouse look permanently after close.
 }
 
 void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction)
@@ -401,7 +629,7 @@ void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedBy
 		FInputModeGameOnly InputMode;
 		SetInputMode(InputMode);
 		bShowMouseCursor = false;
-		SetIgnoreLookInput(false);
+		ResetIgnoreLookInput();
 		return;
 	}
 
@@ -413,7 +641,6 @@ void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedBy
 		InputMode.SetHideCursorDuringCapture(false);
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
-		SetIgnoreLookInput(true);
 		EnsureEquipmentUIVisibleWithInventory();
 		return;
 	}
@@ -421,16 +648,26 @@ void AAlex_PlayerController::CloseLootContainerUI(bool bCloseInventoryIfOpenedBy
 	FInputModeGameOnly InputMode;
 	SetInputMode(InputMode);
 	bShowMouseCursor = false;
-	SetIgnoreLookInput(false);
+	ResetIgnoreLookInput();
 }
 
 void AAlex_PlayerController::ToggleInventory()
 {
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 	if (bToggleCooldown && CurrentTime - LastToggleTime < 0.5f) return;
-	ContainerBackpackWidget = nullptr;
-	bContainerBackpackActive = false;
-	bInventoryOpenedByContainerBackpack = false;
+	if (bContainerBackpackActive)
+	{
+		FSlateApplication::Get().ClearAllUserFocus();
+		FSlateApplication::Get().ReleaseAllPointerCapture();
+		if (ContainerBackpackWidget)
+		{
+			ContainerBackpackWidget->RemoveFromParent();
+			ContainerBackpackWidget = nullptr;
+		}
+		ActiveContainerBackpackItem = nullptr;
+		bContainerBackpackActive = false;
+		bInventoryOpenedByContainerBackpack = false;
+	}
 	bToggleCooldown = false;
 	if (bIsToggling) return;
 	if (!InventoryComponent) return;
@@ -471,6 +708,7 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 		InputMode.SetHideCursorDuringCapture(false);
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
+		ResetIgnoreLookInput();
 		SetIgnoreLookInput(true);
 		if (GetCharacter() && GetCharacter()->GetCharacterMovement()) GetCharacter()->GetCharacterMovement()->Velocity = FVector::ZeroVector;
 		bToggleCooldown = true;
@@ -481,12 +719,25 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 	else
 	{
 		if (bLootInteractionActive) CloseLootContainerUI(false);
+		if (bContainerBackpackActive)
+		{
+			FSlateApplication::Get().ClearAllUserFocus();
+			FSlateApplication::Get().ReleaseAllPointerCapture();
+			if (ContainerBackpackWidget)
+			{
+				ContainerBackpackWidget->RemoveFromParent();
+				ContainerBackpackWidget = nullptr;
+			}
+			ActiveContainerBackpackItem = nullptr;
+			bContainerBackpackActive = false;
+			bInventoryOpenedByContainerBackpack = false;
+		}
 		if (InventoryWidget) { InventoryWidget->RemoveFromParent(); InventoryWidget = nullptr; }
 		if (EquipmentWidget) { EquipmentWidget->RemoveFromParent(); EquipmentWidget = nullptr; }
 		FInputModeGameOnly InputMode;
 		SetInputMode(InputMode);
 		bShowMouseCursor = false;
-		SetIgnoreLookInput(false);
+		ResetIgnoreLookInput();
 		bToggleCooldown = true;
 		bIsToggling = false;
 		if (AmmoHudWidget) { if (AmmoHudWidget->IsInViewport()) AmmoHudWidget->RemoveFromParent(); AmmoHudWidget->AddToViewport(5); }
@@ -513,6 +764,15 @@ void AAlex_PlayerController::EnsureAmmoHudWidgetCreated()
 	AmmoHudWidget = CreateWidget<UUserWidget>(this, AmmoHudWidgetClass);
 	if (!AmmoHudWidget) return;
 	if (!AmmoHudWidget->IsInViewport()) AmmoHudWidget->AddToViewport(5);
+}
+
+void AAlex_PlayerController::EnsureCharacterPropertyWidgetCreated()
+{
+	if (!CharacterPropertyWidgetClass || CharacterPropertyWidget) return;
+	if (!CharacterPropertyWidgetClass->IsChildOf(UUI_CharacterProperty::StaticClass())) return;
+	CharacterPropertyWidget = CreateWidget<UUserWidget>(this, CharacterPropertyWidgetClass);
+	if (!CharacterPropertyWidget) return;
+	if (!CharacterPropertyWidget->IsInViewport()) CharacterPropertyWidget->AddToViewport(3);
 }
 
 void AAlex_PlayerController::AttachToPawnInventoryAndEquipment(APawn* InPawn)
@@ -643,12 +903,22 @@ void AAlex_PlayerController::OpenContainerBackpackUI(UInventoryItemInstance* Con
 	ContainerBackpackWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	FInputModeGameAndUI InputMode;
-	InputMode.SetWidgetToFocus(ContainerBackpackWidget->TakeWidget());
+	// Keep focus on the primary bag widget. Focusing the nested container inventory root
+	// can leave viewport mouse / look routing broken after the panel closes; drag handling
+	// already retargets focus via SetDraggedItemWidget when needed.
+	if (InventoryWidget)
+	{
+		InputMode.SetWidgetToFocus(InventoryWidget->TakeWidget());
+	}
+	else
+	{
+		InputMode.SetWidgetToFocus(ContainerBackpackWidget->TakeWidget());
+	}
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	InputMode.SetHideCursorDuringCapture(false);
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
-	SetIgnoreLookInput(true);
+	// Same as loot: OnInventoryToggled already pushed one ignore-look frame; do not stack again.
 }
 
 void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpenedByContainerBackpack)
@@ -676,7 +946,7 @@ void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpen
 		FInputModeGameOnly InputMode;
 		SetInputMode(InputMode);
 		bShowMouseCursor = false;
-		SetIgnoreLookInput(false);
+		ResetIgnoreLookInput();
 		return;
 	}
 
@@ -688,7 +958,6 @@ void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpen
 		InputMode.SetHideCursorDuringCapture(false);
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
-		SetIgnoreLookInput(true);
 		EnsureEquipmentUIVisibleWithInventory();
 		return;
 	}
@@ -696,5 +965,5 @@ void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpen
 	FInputModeGameOnly InputMode;
 	SetInputMode(InputMode);
 	bShowMouseCursor = false;
-	SetIgnoreLookInput(false);
+	ResetIgnoreLookInput();
 }

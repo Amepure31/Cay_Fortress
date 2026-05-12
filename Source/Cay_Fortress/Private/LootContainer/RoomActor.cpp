@@ -6,7 +6,6 @@
 #include "LootContainer/ContainerGenerationTag.h"
 #include "Inventory/InventoryComponent.h"
 #include "TimerManager.h"
-#include "Engine/Engine.h"
 
 ARoomActor::ARoomActor()
 {
@@ -16,7 +15,6 @@ ARoomActor::ARoomActor()
 	DefaultContainerRefreshChance = 1.0f;
 	bAllContainersOpened = false;
 	bAllContainersLooted = false;
-	bHasShownAllContainersOpenedPrompt = false;
 
 	bAutoCollectAttachedTags_DEPRECATED = true;
 	bGenerateContainersOnBeginPlay_DEPRECATED = true;
@@ -59,7 +57,6 @@ void ARoomActor::PostLoad()
 	// Migrate old serialized flags from previous RoomActor versions.
 	bAutoCollectAttachedContainers = bAutoCollectAttachedContainers || bAutoCollectAttachedTags_DEPRECATED;
 	bRefreshContainersOnBeginPlay = bRefreshContainersOnBeginPlay || bGenerateContainersOnBeginPlay_DEPRECATED;
-	bHasShownAllContainersOpenedPrompt = false;
 }
 
 void ARoomActor::CollectManagedContainers()
@@ -188,11 +185,6 @@ void ARoomActor::EvaluateRoomState()
 	if (bPreviousAllOpened != bAllContainersOpened)
 	{
 		OnAllContainersOpenedStateChanged.Broadcast(bAllContainersOpened);
-		if (bAllContainersOpened && !bHasShownAllContainersOpenedPrompt && GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Green, TEXT("该房间内全部容器已打开"));
-			bHasShownAllContainersOpenedPrompt = true;
-		}
 	}
 
 	if (bPreviousAllLooted != bAllContainersLooted)

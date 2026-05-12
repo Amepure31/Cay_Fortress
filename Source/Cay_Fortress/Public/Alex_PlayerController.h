@@ -13,6 +13,7 @@ class UInventoryItemInstance;
 class UPlayerInteractComponent;
 class UUserWidget;
 class ALootContainerActor;
+class UUI_LootProgressBar;
 
 UCLASS()
 class CAY_FORTRESS_API AAlex_PlayerController : public APlayerController
@@ -54,8 +55,14 @@ private:
 	void AttackPressed(const FInputActionValue& Value);
 	void AttackReleased(const FInputActionValue& Value);
 	void ReloadPressed(const FInputActionValue& Value);
+	void Dodge();
 	void ToggleInventory();
-	void Interact();
+	void InteractStarted();
+	void InteractCompleted();
+	void StartLootProgress(ALootContainerActor* Container);
+	void CancelLootProgress();
+	void CompleteLootProgress();
+	void TransferAllItemsFromContainer();
 	/** @param bShowEquipment 为 false 时仅显示背包（如搜刮容器），不创建/显示装备栏。 */
 	bool EnsureInventoryUIVisible(bool bShowEquipment = true);
 	/** 与背包同时显示装备栏（创建/入视口/可见性/格子同步）。 */
@@ -105,8 +112,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* ReloadAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* DodgeAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* InteractAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
+	float LootHoldDuration = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
+	float LootSpeedUpMultiplier = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> LootProgressBarWidgetClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Interaction, meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> LootContainerWidgetClass;
@@ -183,11 +202,11 @@ protected:
 
 	/** 是否在本地玩家视口左上角附近显示「累计命中」（OnScreenDebug）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|UI")
-	bool bShowAccumulatedHitCounterOnScreen = true;
+	bool bShowAccumulatedHitCounterOnScreen = false;
 
 	/** 是否在累计命中下方显示「上次命中伤害」。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|UI")
-	bool bShowLastRangedHitDamageOnScreen = true;
+	bool bShowLastRangedHitDamageOnScreen = false;
 
 	/** 命中数字在屏幕上的缩放（仅 OnScreenDebug 文本）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|UI", meta = (ClampMin = "0.5", ClampMax = "3"))
@@ -202,6 +221,17 @@ protected:
 
 	bool bLootInteractionActive;
 	bool bInventoryOpenedByLootInteraction;
+	float LootContainerOpenTime;
+
+	bool bIsLootProgressActive;
+	bool bLootRunSpeedUp;
+	float LootProgressElapsed;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ALootContainerActor> LootProgressTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> LootProgressWidget;
 
 	bool bIsToggling;
 	
