@@ -13,6 +13,9 @@ class UInventoryItemInstance;
 class UPlayerInteractComponent;
 class UUserWidget;
 class ALootContainerActor;
+class AStorageCabinetActor;
+class ATrainingMachineActor;
+class AWeaponWorkbenchActor;
 class UUI_LootProgressBar;
 
 UCLASS()
@@ -71,6 +74,20 @@ private:
 	void CloseLootContainerUI(bool bCloseInventoryIfOpenedByLootInteraction);
 	void OpenContainerBackpackUI(UInventoryItemInstance* ContainerItem);
 	void CloseContainerBackpackUI(bool bCloseInventoryIfOpenedByContainerBackpack);
+
+public:
+	void OpenStorageCabinetUI(AStorageCabinetActor* Cabinet);
+	void CloseStorageCabinetUI(bool bCloseInventoryIfOpenedByCabinet);
+	void OpenTrainingMachineUI(ATrainingMachineActor* Machine);
+	void CloseTrainingMachineUI(bool bCloseInventoryIfOpenedByMachine);
+	void OpenWeaponWorkbenchUI(AWeaponWorkbenchActor* Workbench);
+	void CloseWeaponWorkbenchUI(bool bCloseInventoryIfOpenedByWorkbench);
+
+	/** 刷新玩家背包 UI（外部调用，如家具消耗物品后） */
+	void RefreshPlayerInventoryUI();
+
+private:
+	void CloseAllFurnitureUI();
 
 protected:
 	UFUNCTION()
@@ -158,6 +175,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> ContainerBackpackWidgetClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> StorageCabinetWidgetClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> TrainingMachineWidgetClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> WeaponWorkbenchWidgetClass;
+
 	UPROPERTY()
 	UUserWidget* InventoryWidget;
 
@@ -222,6 +248,33 @@ protected:
 	bool bLootInteractionActive;
 	bool bInventoryOpenedByLootInteraction;
 	float LootContainerOpenTime;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TWeakObjectPtr<AStorageCabinetActor> ActiveStorageCabinet;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TWeakObjectPtr<ATrainingMachineActor> ActiveTrainingMachine;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TWeakObjectPtr<AWeaponWorkbenchActor> ActiveWeaponWorkbench;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> StorageCabinetWidget;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> TrainingMachineWidget;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> WeaponWorkbenchWidget;
+
+	bool bStorageCabinetActive;
+	bool bInventoryOpenedByCabinet;
+
+	bool bTrainingMachineActive;
+	bool bInventoryOpenedByTrainingMachine;
+
+	bool bWeaponWorkbenchActive;
+	bool bInventoryOpenedByWeaponWorkbench;
 
 	bool bIsLootProgressActive;
 	bool bLootRunSpeedUp;

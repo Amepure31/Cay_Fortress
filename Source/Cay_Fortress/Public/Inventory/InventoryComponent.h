@@ -163,6 +163,14 @@ public:
 	bool DetachItemInstance(class UInventoryItemInstance* ItemInstance);
 
 	/**
+	 * 将已有物品实例放回网格（DetachItemInstance 的逆操作）。
+	 * 自动寻找可用空位，保留实例上的所有数据（改装覆写等）。
+	 * @return 是否放置成功
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool AttachItemInstance(class UInventoryItemInstance* ItemInstance);
+
+	/**
 	 * 移除指定位置的物品
 	 * @param SlotX X位置
 	 * @param SlotY Y位置
@@ -253,6 +261,14 @@ public:
 	/** 从背包扣除指定类型弹药，返回实际扣除数量 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Ammo")
 	int32 ConsumeAmmoFromInventoryByType(EAmmoType Type, int32 Amount);
+
+	/** 从背包消耗指定 DataAsset 的物品（按堆叠扣减），返回实际扣除数量 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 ConsumeItemByDataAsset(UInventoryItemDataAsset* ItemData, int32 Amount);
+
+	/** 扩容网格（仅扩大，保留已有物品），返回是否成功 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool ExpandGrid(int32 NewWidth, int32 NewHeight);
 
 	/** 计算背包中所有物品的总重量（Weight * StackSize 累加） */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory")

@@ -23,6 +23,12 @@
 #include "Inventory/FInventoryItemInstance.h"
 #include "Inventory/InventoryItemDataAsset.h"
 #include "Inventory/InventoryItemRarity.h"
+#include "BaseBuilding/StorageCabinetActor.h"
+#include "BaseBuilding/TrainingMachineActor.h"
+#include "BaseBuilding/WeaponWorkbenchActor.h"
+#include "UI/UI_TrainingMachine.h"
+#include "UI/UI_WeaponWorkbench.h"
+#include "UI/UI_StorageCabinet.h"
 
 AAlex_PlayerController::AAlex_PlayerController()
 {
@@ -49,6 +55,15 @@ AAlex_PlayerController::AAlex_PlayerController()
 	bInventoryOpenedByContainerBackpack = false;
 	UIUpdateThrottle = 0.f;
 	bToggleCooldown = false;
+	StorageCabinetWidget = nullptr;
+	TrainingMachineWidget = nullptr;
+	WeaponWorkbenchWidget = nullptr;
+	bStorageCabinetActive = false;
+	bInventoryOpenedByCabinet = false;
+	bTrainingMachineActive = false;
+	bInventoryOpenedByTrainingMachine = false;
+	bWeaponWorkbenchActive = false;
+	bInventoryOpenedByWeaponWorkbench = false;
 }
 
 void AAlex_PlayerController::BeginPlay()
@@ -404,7 +419,23 @@ void AAlex_PlayerController::InteractStarted()
 		return;
 	}
 
-	// Non-container interactable: instant interaction
+	if (AStorageCabinetActor* Cabinet = Cast<AStorageCabinetActor>(Target))
+	{
+		OpenStorageCabinetUI(Cabinet);
+		return;
+	}
+	if (ATrainingMachineActor* Machine = Cast<ATrainingMachineActor>(Target))
+	{
+		OpenTrainingMachineUI(Machine);
+		return;
+	}
+	if (AWeaponWorkbenchActor* Workbench = Cast<AWeaponWorkbenchActor>(Target))
+	{
+		OpenWeaponWorkbenchUI(Workbench);
+		return;
+	}
+
+	// Non-container / non-furniture interactable: instant interaction (e.g. Bed)
 	PlayerInteractComponent->TryInteract();
 }
 
@@ -719,6 +750,7 @@ void AAlex_PlayerController::OnInventoryToggled(bool bIsOpen)
 	else
 	{
 		if (bLootInteractionActive) CloseLootContainerUI(false);
+		CloseAllFurnitureUI();
 		if (bContainerBackpackActive)
 		{
 			FSlateApplication::Get().ClearAllUserFocus();
@@ -959,6 +991,195 @@ void AAlex_PlayerController::CloseContainerBackpackUI(bool bCloseInventoryIfOpen
 		SetInputMode(InputMode);
 		bShowMouseCursor = true;
 		EnsureEquipmentUIVisibleWithInventory();
+		return;
+	}
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+	bShowMouseCursor = false;
+	ResetIgnoreLookInput();
+}
+
+void AAlex_PlayerController::CloseAllFurnitureUI()
+{
+	if (bStorageCabinetActive) CloseStorageCabinetUI(false);
+	if (bTrainingMachineActive) CloseTrainingMachineUI(false);
+	if (bWeaponWorkbenchActive) CloseWeaponWorkbenchUI(false);
+}
+
+void AAlex_PlayerController::RefreshPlayerInventoryUI()
+{
+	if (InventoryWidget)
+		if (UUI_Inventory* InvUI = Cast<UUI_Inventory>(InventoryWidget))
+			InvUI->UpdateInventory();
+}
+
+void AAlex_PlayerController::OpenStorageCabinetUI(AStorageCabinetActor* Cabinet)
+{
+	if (!Cabinet || !StorageCabinetWidgetClass) return;
+	const bool bInventoryWasOpen = InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bStorageCabinetActive = true;
+	ActiveStorageCabinet = Cabinet;
+	bInventoryOpenedByCabinet = !bInventoryWasOpen;
+
+	if (!EnsureInventoryUIVisible(false)) { bStorageCabinetActive = false; ActiveStorageCabinet = nullptr; bInventoryOpenedByCabinet = false; return; }
+
+	if (!StorageCabinetWidget) StorageCabinetWidget = CreateWidget<UUserWidget>(this, StorageCabinetWidgetClass);
+	if (!StorageCabinetWidget) { bStorageCabinetActive = false; ActiveStorageCabinet = nullptr; bInventoryOpenedByCabinet = false; return; }
+
+	if (UUI_StorageCabinet* CabUI = Cast<UUI_StorageCabinet>(StorageCabinetWidget))
+	{
+		CabUI->BindStorageCabinet(Cabinet);
+	}
+	else if (UUI_LootContainer* LootUI = Cast<UUI_LootContainer>(StorageCabinetWidget))
+	{
+		// Fallback for generic LootContainer widgets
+		LootUI->BindContainerInventory(Cabinet->GetInventoryComponent());
+		LootUI->UpdateInventory();
+	}
+	else { bStorageCabinetActive = false; ActiveStorageCabinet = nullptr; bInventoryOpenedByCabinet = false; return; }
+
+	if (!StorageCabinetWidget->IsInViewport()) StorageCabinetWidget->AddToViewport();
+	StorageCabinetWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	Cabinet->OpenCabinet();
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(StorageCabinetWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+}
+
+void AAlex_PlayerController::CloseStorageCabinetUI(bool bCloseInventoryIfOpenedByCabinet)
+{
+	if (AStorageCabinetActor* Cabinet = ActiveStorageCabinet.Get()) Cabinet->CloseCabinet();
+	ActiveStorageCabinet = nullptr;
+	bStorageCabinetActive = false;
+	if (StorageCabinetWidget) { StorageCabinetWidget->RemoveFromParent(); StorageCabinetWidget = nullptr; }
+
+	const bool bShouldCloseInventory = bCloseInventoryIfOpenedByCabinet && bInventoryOpenedByCabinet && InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bInventoryOpenedByCabinet = false;
+
+	if (bShouldCloseInventory)
+	{
+		InventoryComponent->CloseInventory();
+		FInputModeGameOnly InputMode;
+		SetInputMode(InputMode);
+		bShowMouseCursor = false;
+		ResetIgnoreLookInput();
+		return;
+	}
+
+	if (InventoryComponent && InventoryComponent->IsInventoryOpen() && InventoryWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(InventoryWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
+		EnsureEquipmentUIVisibleWithInventory();
+		return;
+	}
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+	bShowMouseCursor = false;
+	ResetIgnoreLookInput();
+}
+
+void AAlex_PlayerController::OpenTrainingMachineUI(ATrainingMachineActor* Machine)
+{
+	if (!Machine || !TrainingMachineWidgetClass) return;
+	bTrainingMachineActive = true;
+	ActiveTrainingMachine = Machine;
+
+	TrainingMachineWidget = CreateWidget<UUserWidget>(this, TrainingMachineWidgetClass);
+	if (!TrainingMachineWidget) { bTrainingMachineActive = false; ActiveTrainingMachine = nullptr; return; }
+
+	if (UUI_TrainingMachine* UI = Cast<UUI_TrainingMachine>(TrainingMachineWidget))
+		UI->BindTrainingMachine(Machine);
+
+	if (!TrainingMachineWidget->IsInViewport()) TrainingMachineWidget->AddToViewport();
+	TrainingMachineWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(TrainingMachineWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	SetIgnoreLookInput(true);
+}
+
+void AAlex_PlayerController::CloseTrainingMachineUI(bool bCloseInventoryIfOpenedByMachine)
+{
+	ActiveTrainingMachine = nullptr;
+	bTrainingMachineActive = false;
+	if (TrainingMachineWidget) { TrainingMachineWidget->RemoveFromParent(); TrainingMachineWidget = nullptr; }
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+	bShowMouseCursor = false;
+	ResetIgnoreLookInput();
+}
+
+void AAlex_PlayerController::OpenWeaponWorkbenchUI(AWeaponWorkbenchActor* Workbench)
+{
+	if (!Workbench || !WeaponWorkbenchWidgetClass) return;
+	const bool bInventoryWasOpen = InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bWeaponWorkbenchActive = true;
+	ActiveWeaponWorkbench = Workbench;
+	bInventoryOpenedByWeaponWorkbench = !bInventoryWasOpen;
+
+	if (!EnsureInventoryUIVisible(false)) { bWeaponWorkbenchActive = false; ActiveWeaponWorkbench = nullptr; return; }
+
+	WeaponWorkbenchWidget = CreateWidget<UUserWidget>(this, WeaponWorkbenchWidgetClass);
+	if (!WeaponWorkbenchWidget) { bWeaponWorkbenchActive = false; ActiveWeaponWorkbench = nullptr; return; }
+
+	if (UUI_WeaponWorkbench* UI = Cast<UUI_WeaponWorkbench>(WeaponWorkbenchWidget))
+		UI->BindWeaponWorkbench(Workbench);
+
+	if (!WeaponWorkbenchWidget->IsInViewport()) WeaponWorkbenchWidget->AddToViewport();
+	WeaponWorkbenchWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(WeaponWorkbenchWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	SetIgnoreLookInput(true);
+}
+
+void AAlex_PlayerController::CloseWeaponWorkbenchUI(bool bCloseInventoryIfOpenedByWorkbench)
+{
+	ActiveWeaponWorkbench = nullptr;
+	bWeaponWorkbenchActive = false;
+	if (WeaponWorkbenchWidget) { WeaponWorkbenchWidget->RemoveFromParent(); WeaponWorkbenchWidget = nullptr; }
+
+	const bool bShouldCloseInventory = bCloseInventoryIfOpenedByWorkbench && bInventoryOpenedByWeaponWorkbench && InventoryComponent && InventoryComponent->IsInventoryOpen();
+	bInventoryOpenedByWeaponWorkbench = false;
+
+	if (bShouldCloseInventory)
+	{
+		InventoryComponent->CloseInventory();
+		FInputModeGameOnly InputMode;
+		SetInputMode(InputMode);
+		bShowMouseCursor = false;
+		ResetIgnoreLookInput();
+		return;
+	}
+
+	if (InventoryComponent && InventoryComponent->IsInventoryOpen() && InventoryWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(InventoryWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
 		return;
 	}
 

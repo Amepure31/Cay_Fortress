@@ -713,6 +713,8 @@ void AEnemyAIController::NotifyDamagedBy(AActor* const DamageCauser)
 		En->SetHitReactMoveLocked(true);
 	}
 
+	const bool bHadSightBeforeHit = bPlayerCurrentlyPerceived;
+
 	if (AAlex_PlayerCharacter* const AlexFromCauser = Cast<AAlex_PlayerCharacter>(DamageCauser))
 	{
 		FocusTarget = AlexFromCauser;
@@ -734,12 +736,38 @@ void AEnemyAIController::NotifyDamagedBy(AActor* const DamageCauser)
 			FocusTarget = Cast<AAlex_PlayerCharacter>(PC->GetPawn());
 		}
 	}
-	bPlayerCurrentlyPerceived = FocusTarget != nullptr;
 
 	if (FocusTarget)
 	{
-		// 受击瞬间把黑板 LastKnown 拉到玩家当前位置（不依赖 Chase Tick 间隔），并锁定 AI 注视目标。
-		ApplyLastKnownFromActor(FocusTarget);
+		// If we already had sight on the player, exact lock-on is fair.
+		// Otherwise, only know the rough direction — apply random offset.
+		if (bHadSightBeforeHit)
+		{
+			bPlayerCurrentlyPerceived = true;
+			ApplyLastKnownFromActor(FocusTarget);
+		}
+		else
+		{
+			// Shot from outside sight: don't force perception, use fuzzy position
+			FVector FuzzyLoc = FocusTarget->GetActorLocation();
+			const float OffsetAngle = FMath::FRandRange(0.f, 360.f);
+			const float OffsetDist = FMath::FRandRange(400.f, 900.f);
+			FuzzyLoc += FRotator(0.f, OffsetAngle, 0.f).Vector() * OffsetDist;
+
+			// Project onto NavMesh so the alert investigation point is reachable
+			if (UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld()))
+			{
+				FNavLocation NavLoc;
+				if (NavSys->ProjectPointToNavigation(FuzzyLoc, NavLoc, FVector(1200.f, 1200.f, 500.f)))
+				{
+					FuzzyLoc = NavLoc.Location;
+				}
+			}
+
+			LastKnownPlayerLocation = FuzzyLoc;
+			bHasLastKnownPlayerLocation = true;
+		}
+
 		SetFocus(FocusTarget, EAIFocusPriority::Gameplay);
 	}
 	else
@@ -765,7 +793,15 @@ void AEnemyAIController::OnHitReactStunTimer()
 
 	if (CurrentState == EEnemyBehavior::Roam)
 	{
-		SyncStateToBlackboard();
+		// Hit from outside sight: go Alert to investigate the fuzzy position
+		if (!bPlayerCurrentlyPerceived)
+		{
+			SetBehaviorState(EEnemyBehavior::Alert);
+		}
+		else
+		{
+			SyncStateToBlackboard();
+		}
 		return;
 	}
 

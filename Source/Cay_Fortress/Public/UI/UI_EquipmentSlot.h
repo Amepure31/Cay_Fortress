@@ -75,7 +75,7 @@ public:
 	void ApplySlotChromeAndSize();
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
-	void RefreshSlotVisual();
+	virtual void RefreshSlotVisual();
 
 protected:
 	virtual void NativeConstruct() override;

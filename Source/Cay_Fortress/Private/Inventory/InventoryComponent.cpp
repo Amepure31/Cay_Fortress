@@ -287,6 +287,47 @@ bool UInventoryComponent::RemoveItem(class UInventoryItemInstance* ItemInstance)
 	return true;
 }
 
+bool UInventoryComponent::AttachItemInstance(class UInventoryItemInstance* ItemInstance)
+{
+	if (!ItemInstance || !ItemInstance->ItemData) return false;
+	if (Items.Contains(ItemInstance)) return false; // already in inventory
+
+	const int32 W = FMath::Max(1, ItemInstance->Width);
+	const int32 H = FMath::Max(1, ItemInstance->Height);
+	const FFItemShapeMask Mask = ItemInstance->ShapeMask;
+	int32 SlotX = -1, SlotY = -1;
+	if (!FindSpaceForItem(W, H, Mask, SlotX, SlotY))
+	{
+		// Try rotated variants
+		bool bFound = false;
+		FFItemShapeMask RotMask = Mask;
+		int32 RotW = W, RotH = H;
+		for (int32 R = 1; R < 4; ++R)
+		{
+			RotMask = RotateMaskClockwise(RotMask);
+			RotW = RotMask.Width;
+			RotH = RotMask.Height;
+			if (FindSpaceForItem(RotW, RotH, RotMask, SlotX, SlotY))
+			{
+				ItemInstance->Width = RotW;
+				ItemInstance->Height = RotH;
+				ItemInstance->ShapeMask = RotMask;
+				ItemInstance->RotationQuarterTurns = (ItemInstance->RotationQuarterTurns + R) % 4;
+				bFound = true;
+				break;
+			}
+		}
+		if (!bFound) return false;
+	}
+
+	ItemInstance->SlotX = SlotX;
+	ItemInstance->SlotY = SlotY;
+	Items.Add(ItemInstance);
+	OccupyGrid(ItemInstance, SlotX, SlotY);
+	NotifyInventoryChanged();
+	return true;
+}
+
 class UInventoryItemInstance* UInventoryComponent::RemoveItemAtPosition(int32 SlotX, int32 SlotY)
 {
 	UInventoryItemInstance* Item = GetItemAtPosition(SlotX, SlotY);
@@ -479,6 +520,66 @@ int32 UInventoryComponent::ConsumeAmmoFromInventoryByType(const EAmmoType Type, 
 	}
 	if (Taken > 0) NotifyInventoryChanged();
 	return Taken;
+}
+
+int32 UInventoryComponent::ConsumeItemByDataAsset(UInventoryItemDataAsset* ItemData, int32 Amount)
+{
+	if (!ItemData || Amount <= 0) return 0;
+	int32 RemainingToTake = Amount;
+	TArray<UInventoryItemInstance*> PendingRemove;
+	for (UInventoryItemInstance* Item : Items)
+	{
+		if (!Item || Item->ItemData != ItemData) continue;
+		if (RemainingToTake <= 0) break;
+		const int32 Take = FMath::Min(RemainingToTake, FMath::Max(0, Item->StackSize));
+		Item->StackSize -= Take;
+		RemainingToTake -= Take;
+		if (Item->StackSize <= 0) PendingRemove.Add(Item);
+	}
+	const int32 Taken = Amount - RemainingToTake;
+	for (UInventoryItemInstance* Item : PendingRemove)
+	{
+		ReleaseGrid(Item);
+		Items.Remove(Item);
+		Item->MarkAsGarbage();
+	}
+	if (Taken > 0) NotifyInventoryChanged();
+	return Taken;
+}
+
+bool UInventoryComponent::ExpandGrid(int32 NewWidth, int32 NewHeight)
+{
+	if (NewWidth < GridWidth || NewHeight < GridHeight) return false;
+	if (NewWidth == GridWidth && NewHeight == GridHeight) return true;
+
+	TArray<FFInventoryGridCell> OldGrid = MoveTemp(Grid);
+	const int32 OldWidth = GridWidth;
+	const int32 OldHeight = GridHeight;
+
+	GridWidth = NewWidth;
+	GridHeight = NewHeight;
+	Grid.Empty();
+	for (int32 Y = 0; Y < GridHeight; ++Y)
+		for (int32 X = 0; X < GridWidth; ++X)
+			Grid.Add(FFInventoryGridCell());
+
+	for (const TObjectPtr<UInventoryItemInstance>& Item : Items)
+	{
+		if (!Item) continue;
+		for (int32 Y = Item->SlotY; Y < Item->SlotY + Item->Height; ++Y)
+			for (int32 X = Item->SlotX; X < Item->SlotX + Item->Width; ++X)
+			{
+				const int32 Idx = GetGridIndex(X, Y);
+				if (Idx >= 0 && Idx < Grid.Num())
+				{
+					Grid[Idx].bOccupied = true;
+					Grid[Idx].ItemInstance = Item;
+				}
+			}
+	}
+
+	NotifyInventoryChanged();
+	return true;
 }
 
 float UInventoryComponent::GetTotalCarriedWeight() const

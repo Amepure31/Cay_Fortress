@@ -454,6 +454,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
 	void SetMaxCarryWeight(float InMaxCarryWeight);
 
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetMaxHealth(float InMaxHealth);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetMaxStamina(float InMaxStamina);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetMaxHunger(float InMaxHunger);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetMaxHydration(float InMaxHydration);
+
 	UFUNCTION(BlueprintCallable, Category = "Character|Movement")
 	float GetMoveSpeed() const;
 

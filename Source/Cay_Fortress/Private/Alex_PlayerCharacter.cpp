@@ -102,15 +102,21 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bDoCollisionTest = true;
-	CameraBoom->ProbeSize = 8.f;
+	CameraBoom->ProbeSize = 12.f;
 	CameraBoom->ProbeChannel = ECC_Camera;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 8.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// 防止弹簧臂碰撞检测打到自己胶囊体导致持续缩回
+	// 防止弹簧臂碰撞检测打到自己导致缩回
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	if (USkeletalMeshComponent* Skel = GetMesh())
+	{
+		Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = true;
@@ -518,6 +524,30 @@ void AAlex_PlayerCharacter::SetMaxCarryWeight(float InMaxCarryWeight)
 	MaxCarryWeight = FMath::Max(0.0f, InMaxCarryWeight);
 }
 
+void AAlex_PlayerCharacter::SetMaxHealth(float InMaxHealth)
+{
+	MaxHealth = FMath::Max(1.0f, InMaxHealth);
+	Health = FMath::Min(Health, MaxHealth);
+}
+
+void AAlex_PlayerCharacter::SetMaxStamina(float InMaxStamina)
+{
+	MaxStamina = FMath::Max(1.0f, InMaxStamina);
+	Stamina = FMath::Min(Stamina, MaxStamina);
+}
+
+void AAlex_PlayerCharacter::SetMaxHunger(float InMaxHunger)
+{
+	MaxHunger = FMath::Max(1.0f, InMaxHunger);
+	Hunger = FMath::Min(Hunger, MaxHunger);
+}
+
+void AAlex_PlayerCharacter::SetMaxHydration(float InMaxHydration)
+{
+	MaxHydration = FMath::Max(1.0f, InMaxHydration);
+	Hydration = FMath::Min(Hydration, MaxHydration);
+}
+
 float AAlex_PlayerCharacter::GetMoveSpeed() const { return MoveSpeed; }
 void AAlex_PlayerCharacter::SetMoveSpeed(float InMoveSpeed) { MoveSpeed = FMath::Clamp(InMoveSpeed, 0.0f, 600.0f); if (GetCharacterMovement()) GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
 void AAlex_PlayerCharacter::SetTargetMoveSpeed(float InTargetMoveSpeed) { TargetMoveSpeed = FMath::Clamp(InTargetMoveSpeed, 0.0f, 600.0f); }
@@ -655,7 +685,7 @@ float AAlex_PlayerCharacter::GetActiveWeaponFireRateShotsPerSecond() const
 	if (!Item || !Item->ItemData) return 0.f;
 	const FInventoryItemData& Data = Item->ItemData->ItemData;
 	if (Data.ItemType != EInventoryItemType::Weapon) return 0.f;
-	return FMath::Max(Data.WeaponStats.FireRate, 0.01f);
+	return FMath::Max(Item->GetEffectiveWeaponStats().FireRate, 0.01f);
 }
 
 float AAlex_PlayerCharacter::GetActiveWeaponRangedDamage() const
@@ -665,7 +695,7 @@ float AAlex_PlayerCharacter::GetActiveWeaponRangedDamage() const
 	if (!Item || !Item->ItemData) return 0.f;
 	const FInventoryItemData& Data = Item->ItemData->ItemData;
 	if (Data.ItemType != EInventoryItemType::Weapon) return 0.f;
-	return FMath::Max(0.f, Data.WeaponStats.Damage);
+	return FMath::Max(0.f, Item->GetEffectiveWeaponStats().Damage);
 }
 
 void AAlex_PlayerCharacter::PlayUniversalGunFireSoundIfConfigured()
@@ -760,7 +790,7 @@ float AAlex_PlayerCharacter::ComputeAimTraceMaxDistanceCm() const
 			{
 				const FInventoryItemData& Id = WItem->ItemData->ItemData;
 				if (Id.ItemType == EInventoryItemType::Weapon)
-					MaxCm = FMath::Max(1.f, Id.WeaponStats.Range) * 100.f;
+					MaxCm = FMath::Max(1.f, WItem->GetEffectiveWeaponStats().Range) * 100.f;
 			}
 		}
 	}
@@ -954,7 +984,7 @@ void AAlex_PlayerCharacter::ApplyReloadFillFromInventory()
 	if (!Equipment || !GetInventory()) return;
 	UInventoryItemInstance* Wpn = Equipment->GetEquippedItem(ActiveWeaponSlot);
 	if (!Wpn || !Wpn->ItemData || Wpn->ItemData->ItemData.ItemType != EInventoryItemType::Weapon) return;
-	const int32 Cap = FMath::Max(0, Wpn->ItemData->ItemData.WeaponStats.MagazineCapacity);
+		const int32 Cap = FMath::Max(0, Wpn->GetEffectiveWeaponStats().MagazineCapacity);
 	Wpn->WeaponMagazineAmmo = FMath::Clamp(Wpn->WeaponMagazineAmmo, 0, Cap);
 	const int32 Room = Cap - Wpn->WeaponMagazineAmmo;
 	if (Room <= 0) return;
@@ -1218,7 +1248,7 @@ bool AAlex_PlayerCharacter::TryReload()
 	const UInventoryItemInstance* EquippedWeapon = Equipment->GetEquippedItem(ActiveWeaponSlot);
 	if (!EquippedWeapon || !EquippedWeapon->ItemData || EquippedWeapon->ItemData->ItemData.ItemType != EInventoryItemType::Weapon) return false;
 
-	const int32 MagCap = FMath::Max(0, EquippedWeapon->ItemData->ItemData.WeaponStats.MagazineCapacity);
+	const int32 MagCap = FMath::Max(0, EquippedWeapon->GetEffectiveWeaponStats().MagazineCapacity);
 	if (EquippedWeapon->WeaponMagazineAmmo >= MagCap) return false;
 
 	UInventoryComponent* PlayerInv = GetInventory();

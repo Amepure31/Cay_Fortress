@@ -20,6 +20,11 @@ public:
 
 	virtual void BeginPlay() override;
 
+protected:
+	/** 关卡加载后将玩家移动到匹配的传送节点 */
+	void HandleTeleportArrival(FName NodeID);
+
+public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player")
 	TSubclassOf<AAlex_PlayerCharacter> DefaultPawnClassRef;
 

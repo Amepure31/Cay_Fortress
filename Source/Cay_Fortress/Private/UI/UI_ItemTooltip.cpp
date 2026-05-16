@@ -3,6 +3,7 @@
 #include "Components/ProgressBar.h"
 #include "Inventory/InventoryItemRarity.h"
 #include "Inventory/InventoryItemType.h"
+#include "Inventory/InventoryItemDataAsset.h"
 
 void UUI_ItemTooltip::NativeConstruct()
 {
@@ -73,7 +74,18 @@ void UUI_ItemTooltip::SetItem(UInventoryItemInstance* InItemInstance)
 
 		if (TypeSpecificText)
 		{
-			FString DetailLine = FString::Printf(TEXT("重量: %.2f  价值: %d"), ItemData.Weight, ItemData.Value);
+			FString DetailLine;
+
+			if (ItemData.ItemType == EInventoryItemType::Weapon)
+			{
+				const FWeaponItemStats Stats = InItemInstance->GetEffectiveWeaponStats();
+				DetailLine += FString::Printf(TEXT("伤害: %.0f\n"), Stats.Damage);
+				DetailLine += FString::Printf(TEXT("弹夹: %d/%d\n"), InItemInstance->WeaponMagazineAmmo, Stats.MagazineCapacity);
+				DetailLine += FString::Printf(TEXT("水平后坐力: %.1f  垂直后坐力: %.1f\n"), Stats.HorizontalRecoil, Stats.VerticalRecoil);
+			}
+
+			DetailLine += FString::Printf(TEXT("重量: %.2f  价值: %d"), ItemData.Weight, ItemData.Value);
+
 			if (ItemData.ItemType == EInventoryItemType::Ammo)
 			{
 				const FString AmmoLine = FString::Printf(

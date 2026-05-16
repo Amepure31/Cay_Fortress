@@ -8,6 +8,63 @@
 #include "Inventory/FItemShapeMask.h"
 #include "FInventoryItemInstance.generated.h"
 
+/** 武器属性覆写（工作台改装写入的每实例增量数据） */
+USTRUCT(BlueprintType)
+struct CAY_FORTRESS_API FWeaponStatOverrides
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideDamage = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideDamage"))
+	float Damage = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideFireRate = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideFireRate"))
+	float FireRate = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideMagazineCapacity = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideMagazineCapacity"))
+	int32 MagazineCapacity = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideHorizontalRecoil = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideHorizontalRecoil"))
+	float HorizontalRecoil = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideVerticalRecoil = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideVerticalRecoil"))
+	float VerticalRecoil = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideRange = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideRange"))
+	float Range = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideReloadTime = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideReloadTime"))
+	float ReloadTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideHipFireAccuracy = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideHipFireAccuracy"))
+	float HipFireAccuracy = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideADSAccuracy = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideADSAccuracy"))
+	float ADSAccuracy = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override")
+	bool bOverrideHandling = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override", meta = (EditCondition = "bOverrideHandling"))
+	float Handling = 0.0f;
+};
+
 /**
  * 物品实例类
  * 用于存储单个物品的动态数据
@@ -75,8 +132,20 @@ public:
 	UPROPERTY()
 	TObjectPtr<class UInventoryComponent> ContainerInventory;
 
+	/** 每实例武器属性覆写（由武器工作台写入）。仅 ItemType==Weapon 时有意义。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Weapon")
+	FWeaponStatOverrides WeaponStatOverrides;
+
+	/** 武器改装等级 (Key = (uint8)EWeaponModType, Value = 当前等级) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Weapon")
+	TMap<uint8, int32> WeaponModLevels;
+
 	/** 确保容器背包网格存在并以指定尺寸初始化（非容器物品为 no-op） */
 	void EnsureContainerInventory(int32 InGridWidth, int32 InGridHeight);
+
+	/** 合并基础 DataAsset 属性与覆写，返回有效武器属性 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Weapon")
+	FWeaponItemStats GetEffectiveWeaponStats() const;
 
 	UInventoryItemInstance()
 		: ItemData(nullptr)
