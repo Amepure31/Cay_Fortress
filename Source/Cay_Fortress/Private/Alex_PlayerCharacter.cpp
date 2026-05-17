@@ -1,8 +1,10 @@
 #include "Alex_PlayerCharacter.h"
 #include "CayFortressCollisionChannels.h"
 #include "Alex_PlayerController.h"
+#include "BaseBuilding/BaseBuildingHelpers.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
+#include "Perception/AISense_Hearing.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -59,6 +61,7 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	if (AIPerceptionStimuliSource)
 	{
 		AIPerceptionStimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+		AIPerceptionStimuliSource->RegisterForSense(UAISense_Hearing::StaticClass());
 	}
 
 	AimPistolAttachSocketName = TEXT("Weapon_R_Socket");
@@ -102,21 +105,15 @@ AAlex_PlayerCharacter::AAlex_PlayerCharacter()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bDoCollisionTest = true;
-	CameraBoom->ProbeSize = 12.f;
+	CameraBoom->ProbeSize = 8.f;
 	CameraBoom->ProbeChannel = ECC_Camera;
-	CameraBoom->bEnableCameraLag = true;
-	CameraBoom->CameraLagSpeed = 8.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// 防止弹簧臂碰撞检测打到自己导致缩回
+	// 防止弹簧臂碰撞检测打到自己胶囊体导致持续缩回
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	if (USkeletalMeshComponent* Skel = GetMesh())
-	{
-		Skel->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	}
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = true;
@@ -214,6 +211,21 @@ void AAlex_PlayerCharacter::BeginPlay()
 
 	LogAnimMontageSkeletonMismatches();
 	UpdateAimWeaponVisuals();
+
+	// Initial backpack items
+	if (Inventory && !bInitialItemsSeeded)
+	{
+		bInitialItemsSeeded = true;
+		auto AddInitItem = [this](const TCHAR* Path, int32 Stack = 1)
+		{
+			if (UInventoryItemDataAsset* DA = TryLoadDataAsset<UInventoryItemDataAsset>(FSoftObjectPath(Path)))
+				Inventory->AddItem(DA, Stack);
+		};
+		AddInitItem(TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_AK47_DA.BP_AK47_DA"));
+		AddInitItem(TEXT("/Game/Inventory/InventoryItemDataAsset/Weapon/BP_Desert_Eagle_DA.BP_Desert_Eagle_DA"));
+		AddInitItem(TEXT("/Game/Inventory/InventoryItemDataAsset/Ammo/BP_PistolAmmo_DA.BP_PistolAmmo_DA"), 30);
+		AddInitItem(TEXT("/Game/Inventory/InventoryItemDataAsset/Ammo/BP_Rifle_Ammo_DA.BP_Rifle_Ammo_DA"), 30);
+	}
 }
 
 void AAlex_PlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -333,10 +345,10 @@ void AAlex_PlayerCharacter::LogAnimMontageSkeletonMismatches() const
 		const USkeleton* MS = MontageAsset->GetSkeleton();
 		if (MS != MeshSkel)
 		{
-			UE_LOG(LogAlexCombat, Error,
-				TEXT("%sSKELETON mismatch | %s montage skel=%s mesh skel=%s"),
-				CayFortressCombatLog::Prefix(), Label,
-				MS ? *MS->GetName() : TEXT("null"), *MeshSkel->GetName());
+			//UE_LOG(LogAlexCombat, Error,
+				//TEXT("%sSKELETON mismatch | %s montage skel=%s mesh skel=%s"),
+				//CayFortressCombatLog::Prefix(), Label,
+				//MS ? *MS->GetName() : TEXT("null"), *MeshSkel->GetName());
 		}
 	};
 
@@ -536,6 +548,11 @@ void AAlex_PlayerCharacter::SetMaxStamina(float InMaxStamina)
 	Stamina = FMath::Min(Stamina, MaxStamina);
 }
 
+void AAlex_PlayerCharacter::SetStaminaRecoveryRate(float InRate)
+{
+	StaminaRecoveryRate = FMath::Max(0.0f, InRate);
+}
+
 void AAlex_PlayerCharacter::SetMaxHunger(float InMaxHunger)
 {
 	MaxHunger = FMath::Max(1.0f, InMaxHunger);
@@ -569,6 +586,17 @@ void AAlex_PlayerCharacter::Tick(float DeltaTime)
 
 	UpdateAimPresentation(DeltaTime);
 	TickRangedFullAuto(DeltaTime);
+
+	// Sprint noise for enemies (3m range, ~2 Hz)
+	if (bRunInputHeld)
+	{
+		SprintNoiseAccum += DeltaTime;
+		if (SprintNoiseAccum >= 0.5f)
+		{
+			SprintNoiseAccum = 0.f;
+			UAISense_Hearing::ReportNoiseEvent(GetWorld(), GetActorLocation(), 1.0f, this, 300.f, TEXT("Footstep"));
+		}
+	}
 
 	if (PistolADSMeleeSuppressRemain > 0.f)
 		PistolADSMeleeSuppressRemain = FMath::Max(0.f, PistolADSMeleeSuppressRemain - DeltaTime);
@@ -653,7 +681,7 @@ void AAlex_PlayerCharacter::SetAiming(bool bWantAim)
 			bIsAiming ? TEXT("ON---") : TEXT("OFF--"), *SlotLabel, static_cast<int32>(ActiveWeaponSlot),
 			IsActiveWeaponPistol() ? 1 : 0, *WeaponInfo,
 			GetMesh() && GetMesh()->GetAnimClass() ? *GetMesh()->GetAnimClass()->GetName() : TEXT("(none)"));
-		UE_LOG(LogAlexCombat, Warning, TEXT("%s%s"), CayFortressCombatLog::Prefix(), *Msg);
+		//UE_LOG(LogAlexCombat, Warning, TEXT("%s%s"), CayFortressCombatLog::Prefix(), *Msg);
 		CayFortressCombatLog::NotifyScreen(*Msg, 0.f);
 	}
 
@@ -761,6 +789,46 @@ void AAlex_PlayerCharacter::PerformAdsRangedHitscanAndScoring()
 	{
 		APC->SetLastRangedHitDamageForDebug(FinalDamage);
 		APC->AddAccumulatedHitCount(1);
+		if (Cast<AEnemyCharacter>(HitActor))
+			APC->ShowDamageNumberAtLocation(Hit.ImpactPoint, FinalDamage, DamageMult > 1.0f);
+	}
+}
+
+void AAlex_PlayerCharacter::PerformMeleeHitDetection()
+{
+	if (!IsValid(this) || IsActorBeingDestroyed()) return;
+
+	const FVector CharLocation = GetActorLocation();
+	const FVector Forward = GetActorForwardVector();
+	const FVector Start = CharLocation + Forward * 60.f;
+	const FVector End = CharLocation + Forward * MeleeRange;
+
+	FCollisionShape Sphere = FCollisionShape::MakeSphere(MeleeRadius);
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	TArray<FHitResult> Hits;
+	if (!GetWorld()->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, ECC_Pawn, Sphere, QueryParams))
+		return;
+
+	TSet<AActor*> DamagedActors;
+	AAlex_PlayerController* APC = Cast<AAlex_PlayerController>(GetController());
+	if (!APC && GetWorld())
+		APC = Cast<AAlex_PlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
+
+	for (const FHitResult& Hit : Hits)
+	{
+		AActor* HitActor = Hit.GetActor();
+		if (!HitActor || HitActor == this || DamagedActors.Contains(HitActor)) continue;
+		if (!HitActor->CanBeDamaged()) continue;
+		if (const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(HitActor); Enemy && Enemy->IsDead()) continue;
+
+		DamagedActors.Add(HitActor);
+		const FVector Dir = (HitActor->GetActorLocation() - CharLocation).GetSafeNormal();
+		UGameplayStatics::ApplyDamage(HitActor, MeleeDamage, GetController(), this, UDamageType::StaticClass());
+
+		if (APC && Cast<AEnemyCharacter>(HitActor))
+			APC->ShowDamageNumberAtLocation(Hit.ImpactPoint, MeleeDamage, false);
 	}
 }
 
@@ -1036,7 +1104,9 @@ void AAlex_PlayerCharacter::HealStaleAttackMontageGuard(const bool bLogIfHealed)
 	if (!AnimInst || !ActiveAttackMontageGuard || !AnimInst->Montage_IsActive(ActiveAttackMontageGuard))
 	{
 		if (bLogIfHealed && CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0)
-			UE_LOG(LogAlexCombat, Warning, TEXT("%sATTACK HEAL stale guard"), CayFortressCombatLog::Prefix());
+		{
+			//UE_LOG(LogAlexCombat, Warning, TEXT("%sATTACK HEAL stale guard"), CayFortressCombatLog::Prefix());
+		}
 		ActiveAttackMontageGuard = nullptr;
 		bAttackMontagePlaying = false;
 	}
@@ -1050,7 +1120,9 @@ void AAlex_PlayerCharacter::HealStaleReloadMontageGuard(const bool bLogIfHealed)
 	if (!AnimInst || !ActiveReloadMontageGuard || !AnimInst->Montage_IsActive(ActiveReloadMontageGuard))
 	{
 		if (bLogIfHealed && CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0)
-			UE_LOG(LogAlexCombat, Warning, TEXT("%sRELOAD HEAL stale guard"), CayFortressCombatLog::Prefix());
+		{
+			//UE_LOG(LogAlexCombat, Warning, TEXT("%sRELOAD HEAL stale guard"), CayFortressCombatLog::Prefix());
+		}
 		ActiveReloadMontageGuard = nullptr;
 		bReloadMontagePlaying = false;
 	}
@@ -1064,7 +1136,9 @@ void AAlex_PlayerCharacter::HealStaleDodgeMontageGuard(const bool bLogIfHealed)
 	if (!AnimInst || !ActiveDodgeMontageGuard || !AnimInst->Montage_IsActive(ActiveDodgeMontageGuard))
 	{
 		if (bLogIfHealed && CVarAlexCombatLogAttacks.GetValueOnGameThread() != 0)
-			UE_LOG(LogAlexCombat, Warning, TEXT("%sDODGE HEAL stale guard"), CayFortressCombatLog::Prefix());
+		{
+			//UE_LOG(LogAlexCombat, Warning, TEXT("%sDODGE HEAL stale guard"), CayFortressCombatLog::Prefix());
+		}
 		ActiveDodgeMontageGuard = nullptr;
 		bDodgeMontagePlaying = false;
 		bIsInvincible = false;
@@ -1205,7 +1279,6 @@ void AAlex_PlayerCharacter::HandleDodgeMontageEnded(UAnimMontage* Montage, bool 
 		if (GetWorld())
 			GetWorld()->GetTimerManager().SetTimer(DodgeComboCloseTimer, this,
 				&AAlex_PlayerCharacter::CloseDodgeComboWindow, DodgeComboWindowSeconds, false);
-		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, TEXT("Combo window OPEN"));
 		return;
 	}
 
@@ -1222,7 +1295,6 @@ void AAlex_PlayerCharacter::CloseDodgeComboWindow()
 {
 	bDodgeComboAvailable = false;
 	bIsInvincible = false;
-	GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Orange, TEXT("Combo window CLOSED"));
 	OnDodgeMontageFinished.Broadcast(false);
 }
 
@@ -1276,7 +1348,6 @@ bool AAlex_PlayerCharacter::TryDodge()
 		if (USkeletalMeshComponent* SkelMesh = GetMesh())
 			if (UAnimInstance* AnimInst = SkelMesh->GetAnimInstance())
 				AnimInst->Montage_SetNextSection(DodgeMontageStartSectionName, TEXT("Dodging_2"));
-		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, TEXT("Combo QUEUED"));
 		return true;
 	}
 
@@ -1311,7 +1382,6 @@ bool AAlex_PlayerCharacter::TryDodge()
 		BlendOutDelegate.BindUObject(this, &AAlex_PlayerCharacter::HandleDodgeMontageBlendOut);
 		AnimInst->Montage_SetBlendingOutDelegate(BlendOutDelegate, Montage);
 
-		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, TEXT("Dodging_2 PLAYING"));
 		return true;
 	}
 
@@ -1427,8 +1497,16 @@ void AAlex_PlayerCharacter::TickStatDrainAndEncumbrance(float DeltaTime)
 	// --- Stamina recovery ---
 	if (StaminaRecoveryRate > 0.0f && !bDodgeMontagePlaying && !bAttackMontagePlaying)
 	{
-		const float Rate = bRunInputHeld ? StaminaRecoveryRate * 0.3f : StaminaRecoveryRate;
-		RecoverStamina(Rate * DeltaTime);
+		if (!bRunInputHeld)
+			RecoverStamina(StaminaRecoveryRate * DeltaTime);
+	}
+
+	// --- Sprint stamina drain ---
+	if (bRunInputHeld && SprintStaminaDrainRate > 0.0f)
+	{
+		SetStamina(Stamina - SprintStaminaDrainRate * DeltaTime);
+		if (Stamina <= 0.0f && TargetMoveSpeed > MoveSpeed)
+			TargetMoveSpeed = MoveSpeed;
 	}
 
 	// --- Hunger / Hydration passive drain ---

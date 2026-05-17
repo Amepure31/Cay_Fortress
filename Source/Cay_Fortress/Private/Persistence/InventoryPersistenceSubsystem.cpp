@@ -18,7 +18,7 @@ void UInventoryPersistenceSubsystem::CaptureFromPlayer(AAlex_PlayerCharacter* Pl
 
 	if (!Player)
 	{
-		UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] CaptureFromPlayer — Player is null"));
+		//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] CaptureFromPlayer — Player is null"));
 		return;
 	}
 
@@ -27,7 +27,7 @@ void UInventoryPersistenceSubsystem::CaptureFromPlayer(AAlex_PlayerCharacter* Pl
 
 	if (!Inv)
 	{
-		UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] CaptureFromPlayer — Inventory component is null"));
+		//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] CaptureFromPlayer — Inventory component is null"));
 		return;
 	}
 
@@ -47,9 +47,9 @@ void UInventoryPersistenceSubsystem::CaptureFromPlayer(AAlex_PlayerCharacter* Pl
 	SavedPlayerStats.MaxHydration = Player->GetMaxHydration();
 	SavedPlayerStats.HydrationDrainRate = Player->HydrationDrainRate;
 
-	UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Captured — Inventory %dx%d, %d items, Stats HP=%.0f/%.0f"),
-		SavedGridWidth, SavedGridHeight, Inv->Items.Num(),
-		SavedPlayerStats.Health, SavedPlayerStats.MaxHealth);
+	//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Captured — Inventory %dx%d, %d items, Stats HP=%.0f/%.0f"),
+		//SavedGridWidth, SavedGridHeight, Inv->Items.Num(),
+		//SavedPlayerStats.Health, SavedPlayerStats.MaxHealth);
 
 	// Save inventory items
 	SavedContainerItems.Empty();
@@ -95,8 +95,8 @@ void UInventoryPersistenceSubsystem::CaptureFromPlayer(AAlex_PlayerCharacter* Pl
 			{
 				SavedSlot.bHasItem = true;
 				CaptureItem(Slot.EquippedItem, SavedSlot.ItemData);
-				UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Equipment slot %d: %s"),
-					static_cast<int32>(Slot.SlotType), *Slot.EquippedItem->GetName());
+				//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Equipment slot %d: %s"),
+					//static_cast<int32>(Slot.SlotType), *Slot.EquippedItem->GetName());
 
 				// Capture nested container items for equipped backpacks
 				if (Slot.EquippedItem->ContainerInventory)
@@ -126,8 +126,8 @@ void UInventoryPersistenceSubsystem::CaptureFromPlayer(AAlex_PlayerCharacter* Pl
 	}
 
 	bHasData = true;
-	UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Captured %d inventory items, %d equipment slots"),
-		SavedInventoryItems.Num(), SavedEquipmentSlots.Num());
+	//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Captured %d inventory items, %d equipment slots"),
+		//SavedInventoryItems.Num(), SavedEquipmentSlots.Num());
 }
 
 void UInventoryPersistenceSubsystem::CaptureItem(const UInventoryItemInstance* Source, FPersistedItemData& OutData)
@@ -155,12 +155,12 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 {
 	if (!bHasData)
 	{
-		UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] RestoreToPlayer — no captured data, skipping"));
+		//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] RestoreToPlayer — no captured data, skipping"));
 		return;
 	}
 	if (!Player)
 	{
-		UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] RestoreToPlayer — Player is null"));
+		//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] RestoreToPlayer — Player is null"));
 		bHasData = false;
 		return;
 	}
@@ -170,7 +170,7 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 
 	if (!Inv)
 	{
-		UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] RestoreToPlayer — Inventory component is null"));
+		//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] RestoreToPlayer — Inventory component is null"));
 		bHasData = false;
 		return;
 	}
@@ -194,9 +194,9 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 	Player->SetHydration(SavedPlayerStats.Hydration);
 	Player->HydrationDrainRate = SavedPlayerStats.HydrationDrainRate;
 
-	UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restoring — Inventory %dx%d, %d items, %d equip slots, Stats HP=%.0f/%.0f"),
-		Inv->GridWidth, Inv->GridHeight, SavedInventoryItems.Num(), SavedEquipmentSlots.Num(),
-		SavedPlayerStats.Health, SavedPlayerStats.MaxHealth);
+	//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restoring — Inventory %dx%d, %d items, %d equip slots, Stats HP=%.0f/%.0f"),
+		//Inv->GridWidth, Inv->GridHeight, SavedInventoryItems.Num(), SavedEquipmentSlots.Num(),
+		//SavedPlayerStats.Health, SavedPlayerStats.MaxHealth);
 
 	// 1. Restore inventory items (track new instances for container lookup)
 	TArray<UInventoryItemInstance*> RestoredInstances;
@@ -207,8 +207,8 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 		RestoredInstances[i] = Inst;
 		if (Inst)
 		{
-			UE_LOG(LogInventoryPersistence, Verbose, TEXT("[Persist] Restored inventory item '%s' at (%d,%d)"),
-				*Inst->GetName(), Inst->SlotX, Inst->SlotY);
+			//UE_LOG(LogInventoryPersistence, Verbose, TEXT("[Persist] Restored inventory item '%s' at (%d,%d)"),
+				//*Inst->GetName(), Inst->SlotX, Inst->SlotY);
 		}
 	}
 
@@ -245,8 +245,8 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 		{
 			RestoreItem(CData, ParentItem->ContainerInventory);
 		}
-		UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restored %d container items for parent key %d"),
-			Pair.Value.Items.Num(), Pair.Key);
+		//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restored %d container items for parent key %d"),
+			//Pair.Value.Items.Num(), Pair.Key);
 	}
 
 	// 2. Restore equipment (add to inventory, then equip)
@@ -261,8 +261,8 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 			if (Item)
 			{
 				Equip->EquipItemFromInventory(Inv, Item, Slot.SlotType);
-				UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restored equipment slot %d: '%s'"),
-					static_cast<int32>(Slot.SlotType), *Item->GetName());
+				//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restored equipment slot %d: '%s'"),
+					//static_cast<int32>(Slot.SlotType), *Item->GetName());
 			}
 		}
 	}
@@ -273,7 +273,7 @@ void UInventoryPersistenceSubsystem::RestoreToPlayer(AAlex_PlayerCharacter* Play
 	}
 
 	ClearCapturedData();
-	UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restore complete"));
+	//UE_LOG(LogInventoryPersistence, Log, TEXT("[Persist] Restore complete"));
 }
 
 UInventoryItemInstance* UInventoryPersistenceSubsystem::RestoreItem(
@@ -282,8 +282,8 @@ UInventoryItemInstance* UInventoryPersistenceSubsystem::RestoreItem(
 	UInventoryItemDataAsset* DA = ResolveDataAsset(Data.ItemDataPath);
 	if (!DA)
 	{
-		UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] Failed to resolve DataAsset: %s"),
-			*Data.ItemDataPath.ToString());
+		//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] Failed to resolve DataAsset: %s"),
+			//*Data.ItemDataPath.ToString());
 		return nullptr;
 	}
 
@@ -294,8 +294,8 @@ UInventoryItemInstance* UInventoryPersistenceSubsystem::RestoreItem(
 	{
 		if (!TargetInv->FindSpaceForItem(Data.Width, Data.Height, Data.ShapeMask, UseX, UseY))
 		{
-			UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] No space for '%s' in inventory"),
-				*DA->GetName());
+			//UE_LOG(LogInventoryPersistence, Warning, TEXT("[Persist] No space for '%s' in inventory"),
+				//*DA->GetName());
 			return nullptr;
 		}
 	}

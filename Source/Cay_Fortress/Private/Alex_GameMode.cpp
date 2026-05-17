@@ -53,7 +53,7 @@ void AAlex_GameMode::HandleTeleportArrival(FName NodeID)
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 	if (!Pawn)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[TeleportArrival] 未找到玩家 Pawn，无法移动到节点 '%s'。"), *NodeID.ToString());
+		//UE_LOG(LogTemp, Warning, TEXT("[TeleportArrival] 未找到玩家 Pawn，无法移动到节点 '%s'。"), *NodeID.ToString());
 		return;
 	}
 
@@ -89,10 +89,10 @@ void AAlex_GameMode::HandleTeleportArrival(FName NodeID)
 				}
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("[TeleportArrival] 玩家已到达节点 '%s'（%s）。"), *NodeID.ToString(), *ArrivalLoc.ToString());
+			//UE_LOG(LogTemp, Log, TEXT("[TeleportArrival] 玩家已到达节点 '%s'（%s）。"), *NodeID.ToString(), *ArrivalLoc.ToString());
 			return;
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[TeleportArrival] 未找到 ID 为 '%s' 的传送节点，使用默认出生点。"), *NodeID.ToString());
+	//UE_LOG(LogTemp, Warning, TEXT("[TeleportArrival] 未找到 ID 为 '%s' 的传送节点，使用默认出生点。"), *NodeID.ToString());
 }

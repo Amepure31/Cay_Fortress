@@ -2,10 +2,14 @@
 #include "UI/UI_ItemSlot.h"
 #include "UI/UI_ItemTooltip.h"
 #include "UI/UI_ItemWidget.h"
+#include "UI/UI_ItemContextMenu.h"
 #include "Components/UniformGridPanel.h"
 #include "Inventory/InventoryComponent.h"
 #include "Inventory/InventoryItemDataAsset.h"
 #include "Inventory/InventoryItemType.h"
+#include "Equipment/EquipmentComponent.h"
+#include "Equipment/EquipmentTypes.h"
+#include "Alex_PlayerCharacter.h"
 #include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SWidget.h"
@@ -13,6 +17,7 @@
 #include "Input/Reply.h"
 #include "SlateBasics.h"
 #include "Kismet/GameplayStatics.h"
+#include "Alex_PlayerController.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
 #include "Components/CanvasPanelSlot.h"
@@ -206,6 +211,7 @@ void UUI_Inventory::NativeConstruct()
 	if (BoundInventory && ItemSlots.Num() > 0)
 	{
 		UpdateInventory();
+		UpdateDebugButtonVisibility();
 	}
 }
 
@@ -401,6 +407,8 @@ bool UUI_Inventory::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEve
 
 void UUI_Inventory::NativeDestruct()
 {
+	UUI_ItemContextMenu::CloseActiveMenu();
+
 	// Tooltip is added directly to viewport, so it must be explicitly removed
 	// when inventory UI is closed/destroyed.
 	if (ActiveTooltip)
@@ -581,6 +589,7 @@ void UUI_Inventory::CreateGrid()
 				GridSlot->SetSlotPosition(X, Y);
 				GridSlot->SetItemWidgetClass(ItemWidgetClass);
 				GridSlot->OnSlotClicked.AddDynamic(this, &UUI_Inventory::OnItemSlotClickedInternal);
+				GridSlot->OnSlotRightClicked.AddDynamic(this, &UUI_Inventory::OnItemSlotRightClickedInternal);
 				GridSlot->OnSlotHovered.AddDynamic(this, &UUI_Inventory::ShowTooltip);
 				ItemSlots.Add(GridSlot);
 				GridPanel->AddChildToUniformGrid(GridSlot, Y, X);
@@ -595,6 +604,115 @@ void UUI_Inventory::CreateGrid()
 void UUI_Inventory::OnItemSlotClickedInternal(UUI_ItemSlot* ClickedSlot)
 {
 	OnItemSlotClicked.Broadcast(ClickedSlot);
+}
+
+void UUI_Inventory::OnItemSlotRightClickedInternal(UUI_ItemSlot* ClickedSlot, FVector2D ScreenPosition)
+{
+	if (!ContextMenuClass || !ClickedSlot) return;
+	UInventoryItemInstance* Item = ClickedSlot->GetBoundItem();
+	if (!Item) return;
+
+	HideTooltip();
+
+	UUI_ItemContextMenu* Menu = CreateWidget<UUI_ItemContextMenu>(this, ContextMenuClass);
+	if (Menu)
+		Menu->Show(this, Item, ScreenPosition);
+}
+
+void UUI_Inventory::RequestEquipItem(UInventoryItemInstance* Item)
+{
+	if (!BoundInventory || !Item || !Item->ItemData) return;
+
+	const EInventoryItemType ItemType = Item->ItemData->ItemData.ItemType;
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+	APawn* Pawn = PC->GetPawn();
+	if (!Pawn) return;
+	UEquipmentComponent* EquipComp = Pawn->FindComponentByClass<UEquipmentComponent>();
+	if (!EquipComp) return;
+
+	if (ItemType == EInventoryItemType::Weapon)
+	{
+		EEquipmentSlotType TargetSlot = EquipComp->IsSlotOccupied(EEquipmentSlotType::Weapon1)
+			? EEquipmentSlotType::Weapon2 : EEquipmentSlotType::Weapon1;
+		EquipComp->EquipItemFromInventory(BoundInventory, Item, TargetSlot);
+	}
+	else if (ItemType == EInventoryItemType::Armor)
+	{
+		const EArmorEquipSlot AE = Item->ItemData->ItemData.ArmorStats.EquipSlot;
+		EEquipmentSlotType ArmorSlot;
+		switch (AE)
+		{
+		case EArmorEquipSlot::Head:     ArmorSlot = EEquipmentSlotType::Head; break;
+		case EArmorEquipSlot::Chest:    ArmorSlot = EEquipmentSlotType::Chest; break;
+		case EArmorEquipSlot::Backpack: ArmorSlot = EEquipmentSlotType::Backpack; break;
+		default: ArmorSlot = EEquipmentSlotType::Chest; break;
+		}
+		EquipComp->EquipItemFromInventory(BoundInventory, Item, ArmorSlot);
+	}
+
+	UpdateInventory();
+}
+
+void UUI_Inventory::RequestConsumeFood(UInventoryItemInstance* Item)
+{
+	if (!BoundInventory || !Item || !Item->ItemData) return;
+	if (Item->ItemData->ItemData.ItemType != EInventoryItemType::Food) return;
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+	AAlex_PlayerCharacter* Player = Cast<AAlex_PlayerCharacter>(PC->GetPawn());
+	if (!Player) return;
+
+	const FFoodItemStats& Food = Item->ItemData->ItemData.FoodStats;
+	if (Food.HungerRestore > 0.0f)
+		Player->SetHunger(Player->GetHunger() + Food.HungerRestore);
+	if (Food.HydrationRestore > 0.0f)
+		Player->SetHydration(Player->GetHydration() + Food.HydrationRestore);
+
+	if (Item->StackSize > 1)
+	{
+		Item->StackSize--;
+	}
+	else
+	{
+		BoundInventory->RemoveItem(Item);
+	}
+
+	UpdateInventory();
+}
+
+void UUI_Inventory::RequestConsumeMedical(UInventoryItemInstance* Item)
+{
+	if (!BoundInventory || !Item || !Item->ItemData) return;
+	if (Item->ItemData->ItemData.ItemType != EInventoryItemType::Medical) return;
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+	AAlex_PlayerCharacter* Player = Cast<AAlex_PlayerCharacter>(PC->GetPawn());
+	if (!Player) return;
+
+	const FMedicalItemStats& Med = Item->ItemData->ItemData.MedicalStats;
+	if (Med.TotalRecoveryAmount > 0.0f)
+		Player->SetHealth(Player->GetHealth() + Med.TotalRecoveryAmount);
+
+	if (Item->StackSize > 1)
+	{
+		Item->StackSize--;
+	}
+	else
+	{
+		BoundInventory->RemoveItem(Item);
+	}
+
+	UpdateInventory();
+}
+
+void UUI_Inventory::RequestDiscardItem(UInventoryItemInstance* Item)
+{
+	if (!BoundInventory || !Item) return;
+	BoundInventory->RemoveItem(Item);
+	UpdateInventory();
 }
 
 void UUI_Inventory::SetSlotSize()
@@ -1223,6 +1341,9 @@ void UUI_Inventory::CloseInventory()
 	WeaponUnloadKeyHoldSeconds = 0.f;
 	bTriggeredWeaponUnloadThisHold = false;
 
+	// Close context menu if open
+	UUI_ItemContextMenu::CloseActiveMenu();
+
 	// Ensure hover preview/tooltip never lingers after closing inventory.
 	ClearItemHoverPreview();
 	HideTooltip();
@@ -1318,10 +1439,21 @@ void UUI_Inventory::SetAddItemListVisible(bool bVisible)
 	}
 
 	AddItemComboBox->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	if (!bVisible)
+}
+
+void UUI_Inventory::UpdateDebugButtonVisibility()
+{
+	bool bDebug = false;
+	if (APlayerController* PC = GetOwningPlayer())
 	{
-		AddItemComboBox->ClearSelection();
+		if (AAlex_PlayerController* APC = Cast<AAlex_PlayerController>(PC))
+			bDebug = APC->IsDebugUIVisible();
 	}
+	ESlateVisibility Vis = bDebug ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	if (AddItemButton)
+		AddItemButton->SetVisibility(Vis);
+	if (AddItemComboBox && !bDebug)
+		AddItemComboBox->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 UUI_ItemSlot* UUI_Inventory::FindSlotAtScreenPosition(const FVector2D& ScreenPosition) const

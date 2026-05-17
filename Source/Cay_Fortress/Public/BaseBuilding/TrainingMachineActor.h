@@ -33,9 +33,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training")
 	FText InteractText;
 
-	/** 集中配方 DataAsset（优先）。不填则使用下方的 UpgradeConfigs 数组 */
+	/** 集中配方 DataAsset 路径（优先）。不填则使用下方的 UpgradeConfigs 数组 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training")
-	TObjectPtr<class UTrainingMachineConfigAsset> ConfigAsset;
+	FSoftObjectPath ConfigAssetPath;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training")
 	TArray<FTrainingUpgradeConfig> UpgradeConfigs;

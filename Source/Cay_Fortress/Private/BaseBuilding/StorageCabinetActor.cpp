@@ -1,5 +1,6 @@
 #include "BaseBuilding/StorageCabinetActor.h"
 #include "BaseBuilding/BaseBuildingConfigAssets.h"
+#include "BaseBuilding/BaseBuildingHelpers.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -7,22 +8,8 @@
 #include "Inventory/InventoryItemDataAsset.h"
 #include "Alex_PlayerCharacter.h"
 #include "Alex_PlayerController.h"
-#include "EngineUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCabinet, Log, All);
-
-template<typename T>
-static T* TryLoadDataAsset(const FSoftObjectPath& Path)
-{
-	if (!Path.IsValid()) return nullptr;
-	UObject* Loaded = Path.TryLoad();
-	if (!Loaded) return nullptr;
-	if (T* Direct = Cast<T>(Loaded)) return Direct;
-	if (UBlueprint* BP = Cast<UBlueprint>(Loaded))
-		if (BP->GeneratedClass && BP->GeneratedClass->IsChildOf(T::StaticClass()))
-			return Cast<T>(BP->GeneratedClass->GetDefaultObject());
-	return nullptr;
-}
 
 AStorageCabinetActor::AStorageCabinetActor()
 {
@@ -51,15 +38,15 @@ UStorageCabinetConfigAsset* AStorageCabinetActor::LoadConfigAsset() const
 	UStorageCabinetConfigAsset* Cfg = TryLoadDataAsset<UStorageCabinetConfigAsset>(ConfigAssetPath);
 	if (!ConfigAssetPath.IsValid())
 	{
-		UE_LOG(LogCabinet, Log, TEXT("[%s] ConfigAssetPath 未设置，使用内联配置"), *GetName());
+		//UE_LOG(LogCabinet, Log, TEXT("[%s] ConfigAssetPath 未设置，使用内联配置"), *GetName());
 	}
 	else if (!Cfg)
 	{
-		UE_LOG(LogCabinet, Warning, TEXT("[%s] ConfigAssetPath 加载失败: %s"), *GetName(), *ConfigAssetPath.ToString());
+		//UE_LOG(LogCabinet, Warning, TEXT("[%s] ConfigAssetPath 加载失败: %s"), *GetName(), *ConfigAssetPath.ToString());
 	}
 	else
 	{
-		UE_LOG(LogCabinet, Log, TEXT("[%s] ConfigAsset 加载成功: %s"), *GetName(), *Cfg->GetName());
+		//UE_LOG(LogCabinet, Log, TEXT("[%s] ConfigAsset 加载成功: %s"), *GetName(), *Cfg->GetName());
 	}
 	return Cfg;
 }
@@ -70,7 +57,7 @@ void AStorageCabinetActor::BeginPlay()
 	const auto* Cfg = LoadConfigAsset();
 	const int32 W = Cfg ? Cfg->InitialGridWidth : InitialGridWidth;
 	const int32 H = Cfg ? Cfg->InitialGridHeight : InitialGridHeight;
-	UE_LOG(LogCabinet, Log, TEXT("[%s] 初始化网格 %dx%d"), *GetName(), W, H);
+	//UE_LOG(LogCabinet, Log, TEXT("[%s] 初始化网格 %dx%d"), *GetName(), W, H);
 	if (InventoryComponent)
 		InventoryComponent->InitializeGrid(FMath::Max(1, W), FMath::Max(1, H));
 }
@@ -86,14 +73,14 @@ bool AStorageCabinetActor::CanUpgrade(const TArray<UInventoryComponent*>& Source
 {
 	if (UpgradeLevel >= GetMaxUpgradeLevel())
 	{
-		UE_LOG(LogCabinet, Log, TEXT("[%s] 已达最大升级等级 %d/%d"), *GetName(), UpgradeLevel, GetMaxUpgradeLevel());
+		//UE_LOG(LogCabinet, Log, TEXT("[%s] 已达最大升级等级 %d/%d"), *GetName(), UpgradeLevel, GetMaxUpgradeLevel());
 		return false;
 	}
 
 	TArray<FStorageCabinetCostEntry> Costs;
 	if (!GetCurrentUpgradeCosts(Costs) || Costs.Num() == 0)
 	{
-		UE_LOG(LogCabinet, Warning, TEXT("[%s] 当前等级 %d 无消耗配置"), *GetName(), UpgradeLevel);
+		//UE_LOG(LogCabinet, Warning, TEXT("[%s] 当前等级 %d 无消耗配置"), *GetName(), UpgradeLevel);
 		return false;
 	}
 
@@ -102,7 +89,7 @@ bool AStorageCabinetActor::CanUpgrade(const TArray<UInventoryComponent*>& Source
 		UInventoryItemDataAsset* CostDA = TryLoadDataAsset<UInventoryItemDataAsset>(Entry.ItemPath);
 		if (!CostDA)
 		{
-			UE_LOG(LogCabinet, Warning, TEXT("[%s] 消耗物品路径加载失败: %s"), *GetName(), *Entry.ItemPath.ToString());
+			//UE_LOG(LogCabinet, Warning, TEXT("[%s] 消耗物品路径加载失败: %s"), *GetName(), *Entry.ItemPath.ToString());
 			return false;
 		}
 
@@ -119,10 +106,10 @@ bool AStorageCabinetActor::CanUpgrade(const TArray<UInventoryComponent*>& Source
 		}
 		if (Remaining > 0)
 		{
-			UE_LOG(LogCabinet, Log, TEXT("[%s] 升级不满足: 需要 %s x%d, 还缺 %d"), *GetName(), *CostDA->GetName(), Entry.Amount, Remaining);
+			//UE_LOG(LogCabinet, Log, TEXT("[%s] 升级不满足: 需要 %s x%d, 还缺 %d"), *GetName(), *CostDA->GetName(), Entry.Amount, Remaining);
 			return false;
 		}
-		UE_LOG(LogCabinet, Log, TEXT("[%s] 消耗满足: %s x%d"), *GetName(), *CostDA->GetName(), Entry.Amount);
+		//UE_LOG(LogCabinet, Log, TEXT("[%s] 消耗满足: %s x%d"), *GetName(), *CostDA->GetName(), Entry.Amount);
 	}
 	return true;
 }
@@ -136,37 +123,22 @@ bool AStorageCabinetActor::GetCurrentUpgradeCosts(TArray<FStorageCabinetCostEntr
 	return true;
 }
 
-namespace
+static int32 ConsumeSources(const FStorageCabinetCostEntry& Entry, const TArray<UInventoryComponent*>& Sources)
 {
-	static void CollectAllSources(AActor* Interactor, UInventoryComponent* SelfInv, TArray<UInventoryComponent*>& OutSources)
+	UInventoryItemDataAsset* CostDA = TryLoadDataAsset<UInventoryItemDataAsset>(Entry.ItemPath);
+	if (!CostDA) return 0;
+	int32 Remaining = Entry.Amount;
+	for (UInventoryComponent* Source : Sources)
 	{
-		if (AAlex_PlayerCharacter* Player = Cast<AAlex_PlayerCharacter>(Interactor))
-			if (UInventoryComponent* PlayerInv = Player->FindComponentByClass<UInventoryComponent>())
-				OutSources.Add(PlayerInv);
-		if (SelfInv)
-			OutSources.Add(SelfInv);
-		if (UWorld* World = Interactor ? Interactor->GetWorld() : nullptr)
-			for (TActorIterator<AStorageCabinetActor> It(World); It; ++It)
-				if (UInventoryComponent* CabInv = (*It)->GetInventoryComponent())
-					if (CabInv != SelfInv)
-						OutSources.Add(CabInv);
-	}
-
-	static int32 ConsumeSources(const FStorageCabinetCostEntry& Entry, const TArray<UInventoryComponent*>& Sources)
-	{
-		UInventoryItemDataAsset* CostDA = TryLoadDataAsset<UInventoryItemDataAsset>(Entry.ItemPath);
-		if (!CostDA) return 0;
-		int32 Remaining = Entry.Amount;
-		for (UInventoryComponent* Source : Sources)
+		if (!Source || Remaining <= 0) continue;
+		const int32 Before = Remaining;
+		Remaining -= Source->ConsumeItemByDataAsset(CostDA, Remaining);
+		if (Remaining < Before)
 		{
-			if (!Source || Remaining <= 0) continue;
-			const int32 Before = Remaining;
-			Remaining -= Source->ConsumeItemByDataAsset(CostDA, Remaining);
-			if (Remaining < Before)
-				UE_LOG(LogCabinet, Log, TEXT("[储物柜] 从来源扣除 %s x%d"), *CostDA->GetName(), Before - Remaining);
+			//UE_LOG(LogCabinet, Log, TEXT("[储物柜] 从来源扣除 %s x%d"), *CostDA->GetName(), Before - Remaining);
 		}
-		return Entry.Amount - Remaining;
 	}
+	return Entry.Amount - Remaining;
 }
 
 bool AStorageCabinetActor::UpgradeGrid(AActor* Interactor)
@@ -175,7 +147,7 @@ bool AStorageCabinetActor::UpgradeGrid(AActor* Interactor)
 
 	TArray<UInventoryComponent*> Sources;
 	CollectAllSources(Interactor, InventoryComponent, Sources);
-	UE_LOG(LogCabinet, Log, TEXT("[%s] 搜索到 %d 个物品来源"), *GetName(), Sources.Num());
+	//UE_LOG(LogCabinet, Log, TEXT("[%s] 搜索到 %d 个物品来源"), *GetName(), Sources.Num());
 
 	if (!CanUpgrade(Sources)) return false;
 
@@ -188,7 +160,7 @@ bool AStorageCabinetActor::UpgradeGrid(AActor* Interactor)
 		const int32 Taken = ConsumeSources(Entry, Sources);
 		if (Taken < Entry.Amount)
 		{
-			UE_LOG(LogCabinet, Error, TEXT("[%s] 升级扣除物品失败！需要 %d, 只扣了 %d"), *GetName(), Entry.Amount, Taken);
+			//UE_LOG(LogCabinet, Error, TEXT("[%s] 升级扣除物品失败！需要 %d, 只扣了 %d"), *GetName(), Entry.Amount, Taken);
 			return false;
 		}
 	}
@@ -204,12 +176,12 @@ bool AStorageCabinetActor::UpgradeGrid(AActor* Interactor)
 	const int32 NewWidth = FMath::Min(OldW + Lvl.AddedColumns, MW);
 	const int32 NewHeight = FMath::Min(OldH + Lvl.AddedRows, MH);
 
-	UE_LOG(LogCabinet, Log, TEXT("[%s] 升级网格 %dx%d -> %dx%d (等级 %d -> %d)"),
-		*GetName(), OldW, OldH, NewWidth, NewHeight, UpgradeLevel, UpgradeLevel + 1);
+	//UE_LOG(LogCabinet, Log, TEXT("[%s] 升级网格 %dx%d -> %dx%d (等级 %d -> %d)"),
+		//*GetName(), OldW, OldH, NewWidth, NewHeight, UpgradeLevel, UpgradeLevel + 1);
 
 	if (!InventoryComponent->ExpandGrid(NewWidth, NewHeight))
 	{
-		UE_LOG(LogCabinet, Error, TEXT("[%s] ExpandGrid 失败!"), *GetName());
+		//UE_LOG(LogCabinet, Error, TEXT("[%s] ExpandGrid 失败!"), *GetName());
 		return false;
 	}
 

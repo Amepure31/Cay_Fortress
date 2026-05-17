@@ -4,6 +4,7 @@
 #include "BaseBuilding/StorageCabinetActor.h"
 #include "BaseBuilding/StorageCabinetTypes.h"
 #include "BaseBuilding/BaseBuildingConfigAssets.h"
+#include "BaseBuilding/BaseBuildingHelpers.h"
 #include "Inventory/InventoryItemDataAsset.h"
 #include "Inventory/FInventoryItemInstance.h"
 #include "Inventory/InventoryItemType.h"
@@ -18,26 +19,13 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponWorkbenchUI, Log, All);
 
-template<typename T>
-static T* TryLoadDataAsset(const FSoftObjectPath& Path)
-{
-	if (!Path.IsValid()) return nullptr;
-	UObject* Loaded = Path.TryLoad();
-	if (!Loaded) return nullptr;
-	if (T* Direct = Cast<T>(Loaded)) return Direct;
-	if (UBlueprint* BP = Cast<UBlueprint>(Loaded))
-		if (BP->GeneratedClass && BP->GeneratedClass->IsChildOf(T::StaticClass()))
-			return Cast<T>(BP->GeneratedClass->GetDefaultObject());
-	return nullptr;
-}
-
 void UUI_WeaponWorkbench::NativeConstruct()
 {
 	Super::NativeConstruct();
-	UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] NativeConstruct — WeaponSlot=%s, UpgradeButton=%s, CabinetUpgradeButton=%s"),
-		WeaponSlot ? TEXT("bound") : TEXT("NULL"),
-		UpgradeButton ? TEXT("bound") : TEXT("NULL"),
-		CabinetUpgradeButton ? TEXT("bound") : TEXT("NULL"));
+	//UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] NativeConstruct — WeaponSlot=%s, UpgradeButton=%s, CabinetUpgradeButton=%s"),
+		//WeaponSlot ? TEXT("bound") : TEXT("NULL"),
+		//UpgradeButton ? TEXT("bound") : TEXT("NULL"),
+		//CabinetUpgradeButton ? TEXT("bound") : TEXT("NULL"));
 	if (WeaponSlot)
 		WeaponSlot->SetParentWorkbench(this);
 	if (UpgradeButton)
@@ -49,9 +37,9 @@ void UUI_WeaponWorkbench::NativeConstruct()
 void UUI_WeaponWorkbench::BindWeaponWorkbench(AWeaponWorkbenchActor* InWorkbench)
 {
 	BoundWorkbench = InWorkbench;
-	UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] BindWeaponWorkbench — Actor=%s, pre-bound weapon=%s"),
-		InWorkbench ? *InWorkbench->GetName() : TEXT("null"),
-		(InWorkbench && InWorkbench->BoundWeapon) ? *InWorkbench->BoundWeapon->GetName() : TEXT("null"));
+	//UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] BindWeaponWorkbench — Actor=%s, pre-bound weapon=%s"),
+		//InWorkbench ? *InWorkbench->GetName() : TEXT("null"),
+		//(InWorkbench && InWorkbench->BoundWeapon) ? *InWorkbench->BoundWeapon->GetName() : TEXT("null"));
 	if (WeaponSlot && InWorkbench && InWorkbench->BoundWeapon)
 		WeaponSlot->RefreshWithWeapon(InWorkbench->BoundWeapon);
 	RefreshDisplay();
@@ -60,11 +48,12 @@ void UUI_WeaponWorkbench::BindWeaponWorkbench(AWeaponWorkbenchActor* InWorkbench
 
 void UUI_WeaponWorkbench::OnWeaponSlotChanged(UInventoryItemInstance* Weapon)
 {
-	UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] OnWeaponSlotChanged — Weapon=%s, BoundWorkbench=%s"),
-		Weapon ? *Weapon->GetName() : TEXT("null (clearing)"),
-		BoundWorkbench ? *BoundWorkbench->GetName() : TEXT("null"));
+	//UE_LOG(LogWeaponWorkbenchUI, Log, TEXT("[WorkbenchUI] OnWeaponSlotChanged — Weapon=%s, BoundWorkbench=%s"),
+		//Weapon ? *Weapon->GetName() : TEXT("null (clearing)"),
+		//BoundWorkbench ? *BoundWorkbench->GetName() : TEXT("null"));
 	if (BoundWorkbench)
 		BoundWorkbench->BindWeapon(Weapon);
+	UpdateStatusText();
 	UpdateCostDisplay();
 	UpdateButtonColors();
 	BP_OnWeaponBound(Weapon);
@@ -73,6 +62,7 @@ void UUI_WeaponWorkbench::OnWeaponSlotChanged(UInventoryItemInstance* Weapon)
 void UUI_WeaponWorkbench::SetActiveModType(EWeaponModType ModType)
 {
 	ActiveModType = ModType;
+	UpdateStatusText();
 	UpdateCostDisplay();
 	UpdateButtonColors();
 	BP_OnActiveModTypeChanged(ModType);
@@ -83,25 +73,32 @@ void UUI_WeaponWorkbench::SetActiveModType(EWeaponModType ModType)
 void UUI_WeaponWorkbench::UpdateCostDisplay()
 {
 	UInventoryItemInstance* Weapon = WeaponSlot ? WeaponSlot->GetWeapon() : nullptr;
-	UE_LOG(LogWeaponWorkbenchUI, Verbose, TEXT("[WorkbenchUI] UpdateCostDisplay — Weapon=%s"),
-		Weapon ? *Weapon->GetName() : TEXT("null"));
+	//UE_LOG(LogWeaponWorkbenchUI, Verbose, TEXT("[WorkbenchUI] UpdateCostDisplay — Weapon=%s"),
+		//Weapon ? *Weapon->GetName() : TEXT("null"));
 	if (!Weapon)
 	{
-		UE_LOG(LogWeaponWorkbenchUI, Verbose, TEXT("[WorkbenchUI] UpdateCostDisplay — no weapon, hiding costs"));
+		//UE_LOG(LogWeaponWorkbenchUI, Verbose, TEXT("[WorkbenchUI] UpdateCostDisplay — no weapon, hiding costs"));
 		if (CostImage) CostImage->SetVisibility(ESlateVisibility::Collapsed);
 		if (CostText) CostText->SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
 
 	FWeaponModConfig Cfg;
-	if (GetModConfig(ActiveModType, Cfg) && Cfg.CostItemPath.IsValid() && Cfg.CostAmountPerLevel > 0)
+	if (!GetModConfig(ActiveModType, Cfg) || GetWeaponModLevel(Weapon, ActiveModType) >= Cfg.MaxUpgradeLevels)
+	{
+		if (CostImage) CostImage->SetVisibility(ESlateVisibility::Collapsed);
+		if (CostText) CostText->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	if (Cfg.CostItemPath.IsValid() && Cfg.CostAmountPerLevel > 0)
 	{
 		UInventoryItemDataAsset* DA = TryLoadDataAsset<UInventoryItemDataAsset>(Cfg.CostItemPath);
 		if (CostImage && DA && DA->ItemData.Icon)
 		{
 			FSlateBrush Brush;
 			Brush.SetResourceObject(DA->ItemData.Icon);
-			Brush.ImageSize = FVector2D(64, 64);
+			Brush.ImageSize = FVector2D(DA->ItemData.Width * 64.0f, DA->ItemData.Height * 64.0f);
 			Brush.DrawAs = ESlateBrushDrawType::Image;
 			CostImage->SetBrush(Brush);
 			CostImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -210,10 +207,55 @@ void UUI_WeaponWorkbench::UpdateButtonColors()
 	}
 }
 
+void UUI_WeaponWorkbench::UpdateStatusText()
+{
+	if (!StatusText) return;
+
+	UInventoryItemInstance* Weapon = WeaponSlot ? WeaponSlot->GetWeapon() : nullptr;
+	if (!Weapon)
+	{
+		StatusText->SetText(FText::FromString(TEXT("请绑定一把武器")));
+		StatusText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		return;
+	}
+
+	FWeaponModConfig Cfg;
+	const bool bConfigured = GetModConfig(ActiveModType, Cfg);
+
+	if (!bConfigured)
+	{
+		StatusText->SetText(FText::FromString(TEXT("满级")));
+		StatusText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		return;
+	}
+
+	const int32 CurrentLevel = GetWeaponModLevel(Weapon, ActiveModType);
+	const int32 MaxLevel = Cfg.MaxUpgradeLevels;
+
+	if (CurrentLevel >= MaxLevel)
+	{
+		StatusText->SetText(FText::FromString(TEXT("满级")));
+		StatusText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		return;
+	}
+
+	const int32 NextLevel = CurrentLevel + 1;
+	const FString ModName = StaticEnum<EWeaponModType>()->GetDisplayNameTextByValue(static_cast<int64>(ActiveModType)).ToString();
+	const FString ModText = Cfg.bIsMultiplicative
+		? FString::Printf(TEXT(" x%.1f"), Cfg.ModifierPerLevel)
+		: FString::Printf(TEXT(" +%.1f"), Cfg.ModifierPerLevel);
+
+	const FString Status = FString::Printf(TEXT("%s Lv.%d → Lv.%d (%s)"),
+		*ModName, CurrentLevel, NextLevel, *ModText);
+	StatusText->SetText(FText::FromString(Status));
+	StatusText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
 // ========== Refresh ==========
 
 void UUI_WeaponWorkbench::RefreshDisplay()
 {
+	UpdateStatusText();
 	UpdateCostDisplay();
 	UpdateCabinetCostDisplay();
 	UpdateButtonColors();
@@ -226,6 +268,7 @@ void UUI_WeaponWorkbench::OnUpgradeButtonClicked()
 	if (TryApplyWeaponMod())
 	{
 		UInventoryItemInstance* Weapon = WeaponSlot ? WeaponSlot->GetWeapon() : nullptr;
+		UpdateStatusText();
 		UpdateCostDisplay();
 		UpdateButtonColors();
 		BP_OnWeaponModApplied(Weapon, ActiveModType, GetWeaponModLevel(Weapon, ActiveModType));

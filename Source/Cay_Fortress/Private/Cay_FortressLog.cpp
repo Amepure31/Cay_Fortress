@@ -4,7 +4,7 @@
 
 DEFINE_LOG_CATEGORY(LogAlexCombat);
 
-static constexpr float AlexCombatScreenSecsDefault = 1.5f;
+static constexpr float AlexCombatScreenSecsDefault = 0.f;
 
 static TAutoConsoleVariable<float> CVarAlexCombatScreenSecs(
 	TEXT("alex.CombatScreenSecs"),

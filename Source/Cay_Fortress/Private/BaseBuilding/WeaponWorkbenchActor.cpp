@@ -1,5 +1,6 @@
 #include "BaseBuilding/WeaponWorkbenchActor.h"
 #include "BaseBuilding/BaseBuildingConfigAssets.h"
+#include "BaseBuilding/BaseBuildingHelpers.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -11,23 +12,8 @@
 #include "Alex_PlayerController.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Equipment/EquipmentTypes.h"
-#include "BaseBuilding/StorageCabinetActor.h"
-#include "EngineUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkbench, Log, All);
-
-template<typename T>
-static T* TryLoadDataAsset(const FSoftObjectPath& Path)
-{
-	if (!Path.IsValid()) return nullptr;
-	UObject* Loaded = Path.TryLoad();
-	if (!Loaded) return nullptr;
-	if (T* Direct = Cast<T>(Loaded)) return Direct;
-	if (UBlueprint* BP = Cast<UBlueprint>(Loaded))
-		if (BP->GeneratedClass && BP->GeneratedClass->IsChildOf(T::StaticClass()))
-			return Cast<T>(BP->GeneratedClass->GetDefaultObject());
-	return nullptr;
-}
 
 AWeaponWorkbenchActor::AWeaponWorkbenchActor()
 {
@@ -55,7 +41,9 @@ UWeaponWorkbenchConfigAsset* AWeaponWorkbenchActor::LoadWorkbenchConfig() const
 {
 	auto* Cfg = TryLoadDataAsset<UWeaponWorkbenchConfigAsset>(WorkbenchConfigAssetPath);
 	if (!Cfg && WorkbenchConfigAssetPath.IsValid())
-		UE_LOG(LogWorkbench, Warning, TEXT("[工作台] 改装配方 DA 加载失败: %s"), *WorkbenchConfigAssetPath.ToString());
+	{
+		//UE_LOG(LogWorkbench, Warning, TEXT("[工作台] 改装配方 DA 加载失败: %s"), *WorkbenchConfigAssetPath.ToString());
+	}
 	return Cfg;
 }
 
@@ -63,7 +51,9 @@ UStorageCabinetConfigAsset* AWeaponWorkbenchActor::LoadStorageConfig() const
 {
 	auto* Cfg = TryLoadDataAsset<UStorageCabinetConfigAsset>(StorageConfigAssetPath);
 	if (!Cfg && StorageConfigAssetPath.IsValid())
-		UE_LOG(LogWorkbench, Warning, TEXT("[工作台] 储物配置 DA 加载失败: %s"), *StorageConfigAssetPath.ToString());
+	{
+		//UE_LOG(LogWorkbench, Warning, TEXT("[工作台] 储物配置 DA 加载失败: %s"), *StorageConfigAssetPath.ToString());
+	}
 	return Cfg;
 }
 
@@ -73,7 +63,7 @@ void AWeaponWorkbenchActor::BeginPlay()
 	const auto* Cfg = LoadStorageConfig();
 	const int32 W = Cfg ? Cfg->InitialGridWidth : InitialGridWidth;
 	const int32 H = Cfg ? Cfg->InitialGridHeight : InitialGridHeight;
-	UE_LOG(LogWorkbench, Log, TEXT("[工作台] 初始化储物网格 %dx%d"), W, H);
+	//UE_LOG(LogWorkbench, Log, TEXT("[工作台] 初始化储物网格 %dx%d"), W, H);
 	if (InventoryComponent)
 		InventoryComponent->InitializeGrid(FMath::Max(1, W), FMath::Max(1, H));
 }
@@ -110,37 +100,6 @@ bool AWeaponWorkbenchActor::CanApplyMod(AActor* Interactor, UInventoryItemInstan
 	return true;
 }
 
-namespace
-{
-	static void CollectAllSources(AActor* Interactor, UInventoryComponent* SelfInv, TArray<UInventoryComponent*>& OutSources)
-	{
-		if (AAlex_PlayerCharacter* Player = Cast<AAlex_PlayerCharacter>(Interactor))
-			if (UInventoryComponent* PlayerInv = Player->FindComponentByClass<UInventoryComponent>())
-				OutSources.Add(PlayerInv);
-		if (SelfInv)
-			OutSources.Add(SelfInv);
-		if (UWorld* World = Interactor ? Interactor->GetWorld() : nullptr)
-			for (TActorIterator<AStorageCabinetActor> It(World); It; ++It)
-				if (UInventoryComponent* CabInv = (*It)->GetInventoryComponent())
-					if (CabInv != SelfInv)
-						OutSources.Add(CabInv);
-	}
-
-	static int32 ConsumeFromSources(UInventoryItemDataAsset* CostItem, int32 Amount, const TArray<UInventoryComponent*>& Sources)
-	{
-		int32 Remaining = Amount;
-		for (UInventoryComponent* Source : Sources)
-		{
-			if (!Source || Remaining <= 0) continue;
-			const int32 Before = Remaining;
-			Remaining -= Source->ConsumeItemByDataAsset(CostItem, Remaining);
-			if (Remaining < Before)
-				UE_LOG(LogWorkbench, Log, TEXT("[工作台] 扣除 %s x%d"), *CostItem->GetName(), Before - Remaining);
-		}
-		return Amount - Remaining;
-	}
-}
-
 bool AWeaponWorkbenchActor::ApplyWeaponMod(AActor* Interactor, UInventoryItemInstance* WeaponInstance, EWeaponModType ModType)
 {
 	if (!CanApplyMod(Interactor, WeaponInstance, ModType)) return false;
@@ -150,7 +109,7 @@ bool AWeaponWorkbenchActor::ApplyWeaponMod(AActor* Interactor, UInventoryItemIns
 
 	TArray<UInventoryComponent*> Sources;
 	CollectAllSources(Interactor, InventoryComponent, Sources);
-	UE_LOG(LogWorkbench, Log, TEXT("[工作台] 搜索到 %d 个来源, 改装 ModType=%d"), Sources.Num(), static_cast<uint8>(ModType));
+	//UE_LOG(LogWorkbench, Log, TEXT("[工作台] 搜索到 %d 个来源, 改装 ModType=%d"), Sources.Num(), static_cast<uint8>(ModType));
 
 	UInventoryItemDataAsset* CostDA = TryLoadDataAsset<UInventoryItemDataAsset>(Cfg.CostItemPath);
 	if (!CostDA) return false;
@@ -163,8 +122,8 @@ bool AWeaponWorkbenchActor::ApplyWeaponMod(AActor* Interactor, UInventoryItemIns
 	WeaponInstance->WeaponModLevels.Add(static_cast<uint8>(ModType), NewLevel);
 	ApplyModifierToOverrides(WeaponInstance, ModType, NewLevel);
 
-	UE_LOG(LogWorkbench, Log, TEXT("[工作台] 改装完成 %s ModType=%d Lv%d->%d"),
-		*WeaponInstance->GetName(), static_cast<uint8>(ModType), OldLevel, NewLevel);
+	//UE_LOG(LogWorkbench, Log, TEXT("[工作台] 改装完成 %s ModType=%d Lv%d->%d"),
+		//*WeaponInstance->GetName(), static_cast<uint8>(ModType), OldLevel, NewLevel);
 	BP_OnWeaponModApplied(Interactor, WeaponInstance, ModType, NewLevel);
 	return true;
 }
@@ -267,7 +226,9 @@ namespace
 			const int32 Before = Remaining;
 			Remaining -= Source->ConsumeItemByDataAsset(CostDA, Remaining);
 			if (Remaining < Before)
-				UE_LOG(LogWorkbench, Log, TEXT("[工作台] 升级扣除 %s x%d"), *CostDA->GetName(), Before - Remaining);
+			{
+				//UE_LOG(LogWorkbench, Log, TEXT("[工作台] 升级扣除 %s x%d"), *CostDA->GetName(), Before - Remaining);
+			}
 		}
 		return Entry.Amount - Remaining;
 	}
@@ -294,7 +255,7 @@ bool AWeaponWorkbenchActor::UpgradeGrid(AActor* Interactor)
 	const int32 MH = Cfg ? Cfg->MaxGridHeight : MaxGridHeight;
 	const int32 NewW = FMath::Min(InventoryComponent->GridWidth + Lvl.AddedColumns, MW);
 	const int32 NewH = FMath::Min(InventoryComponent->GridHeight + Lvl.AddedRows, MH);
-	UE_LOG(LogWorkbench, Log, TEXT("[工作台] 升级网格 %dx%d -> %dx%d"), InventoryComponent->GridWidth, InventoryComponent->GridHeight, NewW, NewH);
+	//UE_LOG(LogWorkbench, Log, TEXT("[工作台] 升级网格 %dx%d -> %dx%d"), InventoryComponent->GridWidth, InventoryComponent->GridHeight, NewW, NewH);
 	if (!InventoryComponent->ExpandGrid(NewW, NewH)) return false;
 
 	++UpgradeLevel;
@@ -327,26 +288,26 @@ DEFINE_LOG_CATEGORY_STATIC(LogWeaponWorkbench, Log, All);
 
 void AWeaponWorkbenchActor::BindWeapon(UInventoryItemInstance* Weapon)
 {
-	UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BindWeapon called — Weapon=%s, previous BoundWeapon=%s"),
-		Weapon ? *Weapon->GetName() : TEXT("null (unbind)"),
-		BoundWeapon ? *BoundWeapon->GetName() : TEXT("null"));
+	//UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BindWeapon called — Weapon=%s, previous BoundWeapon=%s"),
+		//Weapon ? *Weapon->GetName() : TEXT("null (unbind)"),
+		//BoundWeapon ? *BoundWeapon->GetName() : TEXT("null"));
 
 	if (!Weapon)
 	{
 		BoundWeapon = nullptr;
-		UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BoundWeapon cleared"));
+		//UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BoundWeapon cleared"));
 		return;
 	}
 	if (Weapon->ItemData && Weapon->ItemData->ItemData.ItemType == EInventoryItemType::Weapon)
 	{
 		BoundWeapon = Weapon;
-		UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BoundWeapon set to '%s' (Type=Weapon)"), *Weapon->GetName());
+		//UE_LOG(LogWeaponWorkbench, Log, TEXT("[WorkbenchActor] BoundWeapon set to '%s' (Type=Weapon)"), *Weapon->GetName());
 	}
 	else
 	{
-		UE_LOG(LogWeaponWorkbench, Warning, TEXT("[WorkbenchActor] BindWeapon REJECTED — ItemData=%s, ItemType=%d"),
-			Weapon->ItemData ? TEXT("valid") : TEXT("null"),
-			Weapon->ItemData ? static_cast<int32>(Weapon->ItemData->ItemData.ItemType) : -1);
+		//UE_LOG(LogWeaponWorkbench, Warning, TEXT("[WorkbenchActor] BindWeapon REJECTED — ItemData=%s, ItemType=%d"),
+			//Weapon->ItemData ? TEXT("valid") : TEXT("null"),
+			//Weapon->ItemData ? static_cast<int32>(Weapon->ItemData->ItemData.ItemType) : -1);
 	}
 }
 

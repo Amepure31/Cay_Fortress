@@ -14,6 +14,7 @@ class UUI_Inventory;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSlotClicked, UUI_ItemSlot*, Slot);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSlotHovered, UUI_ItemSlot*, Slot);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSlotRightClicked, UUI_ItemSlot*, Slot, FVector2D, ScreenPosition);
 
 UCLASS()
 class CAY_FORTRESS_API UUI_ItemSlot : public UUserWidget
@@ -41,6 +42,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
 	FOnSlotHovered OnSlotHovered;
+
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FOnSlotRightClicked OnSlotRightClicked;
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SetSlotPosition(int32 InGridX, int32 InGridY);

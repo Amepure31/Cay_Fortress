@@ -276,7 +276,7 @@ void UAlex_AnimInstance::NativeUpdateAnimation(float DeltaTime)
 							AimOffsetPitch,
 							AimOffsetYaw,
 							*GetNameSafe(GetClass()));
-						UE_LOG(LogAlexCombat, Warning, TEXT("%s%s"), CayFortressCombatLog::Prefix(), *Msg);
+						//UE_LOG(LogAlexCombat, Warning, TEXT("%s%s"), CayFortressCombatLog::Prefix(), *Msg);
 					}
 				}
 			}

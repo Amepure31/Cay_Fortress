@@ -77,6 +77,9 @@ public:
 	float StaminaRecoveryRate;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
+	float SprintStaminaDrainRate = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "0", UIMin = "0"))
 	float Hunger;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Stats", meta = (ClampMin = "1", UIMin = "1"))
@@ -212,6 +215,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Melee", meta = (ClampMin = "0", ClampMax = "3", UIMin = "0", UIMax = "3"))
 	float MeleeAttackCooldownSeconds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Melee", meta = (ClampMin = "1", UIMin = "1"))
+	float MeleeDamage = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Melee", meta = (ClampMin = "50", UIMin = "50"))
+	float MeleeRange = 180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Melee", meta = (ClampMin = "20", UIMin = "20"))
+	float MeleeRadius = 90.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Animation")
 	TObjectPtr<UAnimMontage> UnarmedAttackMontage;
 
@@ -302,6 +314,8 @@ protected:
 	float RangedAutoFireAccum = 0.f;
 	float PistolADSMeleeSuppressRemain = 0.f;
 	float LastMeleeAttackTime = -1000.f;
+	float SprintNoiseAccum = 0.f;
+	bool bInitialItemsSeeded = false;
 
 	TObjectPtr<UAnimMontage> ActiveAttackMontageGuard;
 	TObjectPtr<UAnimMontage> ActiveReloadMontageGuard;
@@ -333,6 +347,7 @@ protected:
 	float GetActiveWeaponRangedDamage() const;
 	void PerformAdsRangedHitscanAndScoring();
 	void RequestAdsRangedHitscanAndScoring();
+
 	void PlayUniversalGunFireSoundIfConfigured();
 	void TickRangedFullAuto(float DeltaSeconds);
 	UAnimMontage* SelectRangedAttackMontage() const;
@@ -354,6 +369,9 @@ protected:
 	void HandleEquipmentChanged(EEquipmentSlotType SlotType, UInventoryItemInstance* NewItem);
 
 public:
+	UFUNCTION(BlueprintCallable, Category = "Combat|Melee")
+	void PerformMeleeHitDetection();
+
 	UFUNCTION(BlueprintCallable, Category = "Character|Inventory")
 	UInventoryComponent* GetInventory() const;
 
@@ -459,6 +477,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
 	void SetMaxStamina(float InMaxStamina);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
+	void SetStaminaRecoveryRate(float InRate);
 
 	UFUNCTION(BlueprintCallable, Category = "Character|Stats")
 	void SetMaxHunger(float InMaxHunger);

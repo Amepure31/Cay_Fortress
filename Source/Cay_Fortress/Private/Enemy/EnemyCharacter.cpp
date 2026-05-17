@@ -62,10 +62,12 @@ void AEnemyCharacter::ConfigureWeaponTraceCollision()
 	if (UCapsuleComponent* const RootCap = GetCapsuleComponent())
 	{
 		RootCap->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
+		RootCap->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	}
 	if (USkeletalMeshComponent* const SkelMesh = GetMesh())
 	{
 		SkelMesh->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Block);
+		SkelMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 		if (SkelMesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
 		{
 			SkelMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -175,6 +177,21 @@ float AEnemyCharacter::TakeDamage(
 	if (AEnemyAIController* const AI = Cast<AEnemyAIController>(GetController()))
 	{
 		AI->NotifyDamagedBy(DamageCauser);
+	}
+
+	// Alert nearby enemies within 5m
+	if (AActor* PlayerPawn = EventInstigator ? EventInstigator->GetPawn() : nullptr)
+	{
+		TArray<AActor*> NearbyEnemies;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), AEnemyCharacter::StaticClass(), NearbyEnemies);
+		for (AActor* Other : NearbyEnemies)
+		{
+			if (!Other || Other == this) continue;
+			if (FVector::DistSquared(GetActorLocation(), Other->GetActorLocation()) > 250000.f) continue; // 500cm
+			if (AEnemyCharacter* OtherEnemy = Cast<AEnemyCharacter>(Other))
+				if (AEnemyAIController* OtherAI = Cast<AEnemyAIController>(OtherEnemy->GetController()))
+					OtherAI->ForceDetectPlayer(PlayerPawn);
+		}
 	}
 
 	return Actual;
@@ -378,6 +395,10 @@ void AEnemyCharacter::PlayDeathMontageAndCleanup()
 	DisableRootCapsuleForCorpse();
 
 	USkeletalMeshComponent* const Skel = GetMesh();
+	if (Skel)
+	{
+		Skel->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Ignore);
+	}
 	UAnimInstance* const AnimInst = Skel ? Skel->GetAnimInstance() : nullptr;
 	if (AnimInst && DeathMontage)
 	{

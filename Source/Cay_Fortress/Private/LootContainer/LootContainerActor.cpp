@@ -308,7 +308,7 @@ void ALootContainerActor::RefreshItemsByRoom_Implementation()
 	}
 
 	// Only handle requested container types for now.
-	if (ContainerType != EContainerType::FoodCrate && ContainerType != EContainerType::Toilet)
+	if (ContainerType != EContainerType::FoodCrate && ContainerType != EContainerType::Toilet && ContainerType != EContainerType::MedicalCrate && ContainerType != EContainerType::ToolKit)
 	{
 		return;
 	}
@@ -319,6 +319,53 @@ void ALootContainerActor::RefreshItemsByRoom_Implementation()
 		if (UInventoryItemDataAsset* FreshWaterAsset = GetToiletFreshWaterAsset())
 		{
 			CandidateAssets.Add(FreshWaterAsset);
+		}
+	}
+	else if (ContainerType == EContainerType::MedicalCrate)
+	{
+		const TArray<UInventoryItemDataAsset*> AllItemAssets = GetAllItemDataAssetsForContainerRefresh();
+		if (AllItemAssets.IsEmpty())
+		{
+			InventoryComponent->Clear();
+			return;
+		}
+
+		for (UInventoryItemDataAsset* ItemDataAsset : AllItemAssets)
+		{
+			if (!ItemDataAsset)
+			{
+				continue;
+			}
+
+			const FInventoryItemData& ItemData = ItemDataAsset->ItemData;
+			if (ItemData.ItemType == EInventoryItemType::Medical)
+			{
+				CandidateAssets.Add(ItemDataAsset);
+			}
+		}
+	}
+	else if (ContainerType == EContainerType::ToolKit)
+	{
+		const TArray<UInventoryItemDataAsset*> AllItemAssets = GetAllItemDataAssetsForContainerRefresh();
+		if (AllItemAssets.IsEmpty())
+		{
+			InventoryComponent->Clear();
+			return;
+		}
+
+		for (UInventoryItemDataAsset* ItemDataAsset : AllItemAssets)
+		{
+			if (!ItemDataAsset)
+			{
+				continue;
+			}
+
+			const FInventoryItemData& ItemData = ItemDataAsset->ItemData;
+			if (ItemData.ItemType == EInventoryItemType::Ammo ||
+				ItemData.ItemType == EInventoryItemType::Material)
+			{
+				CandidateAssets.Add(ItemDataAsset);
+			}
 		}
 	}
 	else

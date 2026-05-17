@@ -13,16 +13,21 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkbenchSlot, Log, All);
 
+void UUI_WorkbenchWeaponSlot::SetParentWorkbench(UUI_WeaponWorkbench* InWorkbench)
+{
+	ParentWorkbench = InWorkbench;
+}
+
 void UUI_WorkbenchWeaponSlot::RefreshWithWeapon(UInventoryItemInstance* Weapon)
 {
-	UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] RefreshWithWeapon called — Weapon=%s, ItemIcon=%s"),
-		Weapon ? *Weapon->GetName() : TEXT("null"),
-		ItemIcon ? TEXT("valid") : TEXT("NULL"));
+	//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] RefreshWithWeapon called — Weapon=%s, ItemIcon=%s"),
+		//Weapon ? *Weapon->GetName() : TEXT("null"),
+		//ItemIcon ? TEXT("valid") : TEXT("NULL"));
 
 	CurrentWeapon = Weapon;
 	if (!ItemIcon)
 	{
-		UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] RefreshWithWeapon — ItemIcon is NULL, aborting"));
+		//UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] RefreshWithWeapon — ItemIcon is NULL, aborting"));
 		return;
 	}
 
@@ -54,8 +59,8 @@ void UUI_WorkbenchWeaponSlot::RefreshWithWeapon(UInventoryItemInstance* Weapon)
 		ItemIcon->SetBrush(Brush);
 		ItemIcon->SetVisibility(ESlateVisibility::Visible);
 
-		UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Icon set — ImageSize=(%.0f, %.0f), Visibility=Visible, IconName=%s"),
-			ScaledW, FixedH, *Weapon->ItemData->ItemData.Icon->GetName());
+		//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Icon set — ImageSize=(%.0f, %.0f), Visibility=Visible, IconName=%s"),
+			//ScaledW, FixedH, *Weapon->ItemData->ItemData.Icon->GetName());
 
 		if (SlotHintIcon) SlotHintIcon->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -63,8 +68,8 @@ void UUI_WorkbenchWeaponSlot::RefreshWithWeapon(UInventoryItemInstance* Weapon)
 		{
 			const FLinearColor RarityColor = GetInventoryItemRaritySlotBackgroundColor(Weapon->ItemData->ItemData.Rarity);
 			SlotBackground->SetColorAndOpacity(RarityColor);
-			UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Background set to rarity color (R=%.2f G=%.2f B=%.2f)"),
-				RarityColor.R, RarityColor.G, RarityColor.B);
+			//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Background set to rarity color (R=%.2f G=%.2f B=%.2f)"),
+				//RarityColor.R, RarityColor.G, RarityColor.B);
 		}
 
 		if (SlotLabel)
@@ -74,14 +79,14 @@ void UUI_WorkbenchWeaponSlot::RefreshWithWeapon(UInventoryItemInstance* Weapon)
 				: Weapon->ItemData->ItemData.ItemName;
 			SlotLabel->SetText(Name);
 			SlotLabel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-			UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Label set to '%s'"), *Name.ToString());
+			//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Label set to '%s'"), *Name.ToString());
 		}
 	}
 	else
 	{
-		UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Hiding ItemIcon — Weapon=%s, HasIcon=%s"),
-			Weapon ? TEXT("valid") : TEXT("null"),
-			(Weapon && Weapon->ItemData && Weapon->ItemData->ItemData.Icon) ? TEXT("yes") : TEXT("no"));
+		//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Hiding ItemIcon — Weapon=%s, HasIcon=%s"),
+			//Weapon ? TEXT("valid") : TEXT("null"),
+			//(Weapon && Weapon->ItemData && Weapon->ItemData->ItemData.Icon) ? TEXT("yes") : TEXT("no"));
 
 		ItemIcon->SetVisibility(ESlateVisibility::Hidden);
 		if (SlotHintIcon) SlotHintIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -95,40 +100,40 @@ bool UUI_WorkbenchWeaponSlot::NativeOnDragOver(const FGeometry& InGeometry, cons
 	UUI_ItemWidget* SourceWidget = InOperation ? Cast<UUI_ItemWidget>(InOperation->Payload) : nullptr;
 	if (!SourceWidget || !SourceWidget->GetItemInstance())
 	{
-		UE_LOG(LogWorkbenchSlot, Verbose, TEXT("[WorkbenchSlot] DragOver — no valid ItemWidget payload"));
+		//UE_LOG(LogWorkbenchSlot, Verbose, TEXT("[WorkbenchSlot] DragOver — no valid ItemWidget payload"));
 		return false;
 	}
 
 	UInventoryItemInstance* Item = SourceWidget->GetItemInstance();
 	const bool bIsWeapon = Item && Item->ItemData && Item->ItemData->ItemData.ItemType == EInventoryItemType::Weapon;
 
-	UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] DragOver — Item=%s, ItemType=%d, IsWeapon=%s"),
-		Item ? *Item->GetName() : TEXT("null"),
-		(Item && Item->ItemData) ? static_cast<int32>(Item->ItemData->ItemData.ItemType) : -1,
-		bIsWeapon ? TEXT("ACCEPT") : TEXT("REJECT"));
+	//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] DragOver — Item=%s, ItemType=%d, IsWeapon=%s"),
+		//Item ? *Item->GetName() : TEXT("null"),
+		//(Item && Item->ItemData) ? static_cast<int32>(Item->ItemData->ItemData.ItemType) : -1,
+		//bIsWeapon ? TEXT("ACCEPT") : TEXT("REJECT"));
 
 	return bIsWeapon;
 }
 
 bool UUI_WorkbenchWeaponSlot::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] NativeOnDrop — received drop"));
+	//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] NativeOnDrop — received drop"));
 
 	UUI_ItemWidget* SourceWidget = InOperation ? Cast<UUI_ItemWidget>(InOperation->Payload) : nullptr;
 	if (!SourceWidget || !SourceWidget->GetItemInstance())
 	{
-		UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Drop — no valid ItemWidget payload"));
+		//UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Drop — no valid ItemWidget payload"));
 		return false;
 	}
 
 	UInventoryItemInstance* Item = SourceWidget->GetItemInstance();
 	if (!Item || !Item->ItemData || Item->ItemData->ItemData.ItemType != EInventoryItemType::Weapon)
 	{
-		UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Drop — item not a weapon, rejecting"));
+		//UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Drop — item not a weapon, rejecting"));
 		return false;
 	}
 
-	UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Drop ACCEPTED — Weapon=%s"), *Item->GetName());
+	//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Drop ACCEPTED — Weapon=%s"), *Item->GetName());
 
 	// Remove weapon from player inventory so it's "in" the workbench slot
 	if (APlayerController* PC = GetOwningPlayer())
@@ -140,7 +145,7 @@ bool UUI_WorkbenchWeaponSlot::NativeOnDrop(const FGeometry& InGeometry, const FD
 				if (PlayerInv->Items.Contains(Item))
 				{
 					PlayerInv->DetachItemInstance(Item);
-					UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon detached from player inventory"));
+					//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon detached from player inventory"));
 				}
 			}
 		}
@@ -150,12 +155,12 @@ bool UUI_WorkbenchWeaponSlot::NativeOnDrop(const FGeometry& InGeometry, const FD
 
 	if (UUI_WeaponWorkbench* WB = ParentWorkbench.Get())
 	{
-		UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Notifying ParentWorkbench->OnWeaponSlotChanged"));
+		//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Notifying ParentWorkbench->OnWeaponSlotChanged"));
 		WB->OnWeaponSlotChanged(Item);
 	}
 	else
 	{
-		UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] ParentWorkbench is null — OnWeaponSlotChanged NOT called"));
+		//UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] ParentWorkbench is null — OnWeaponSlotChanged NOT called"));
 	}
 
 	return true;
@@ -165,8 +170,8 @@ FReply UUI_WorkbenchWeaponSlot::NativeOnMouseButtonDown(const FGeometry& InGeome
 {
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
-		UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Right-click — returning weapon '%s' to backpack"),
-			CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
+		//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Right-click — returning weapon '%s' to backpack"),
+			//CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
 		ClearWeapon();
 		return FReply::Handled();
 	}
@@ -177,8 +182,8 @@ FReply UUI_WorkbenchWeaponSlot::NativeOnMouseButtonDown(const FGeometry& InGeome
 
 void UUI_WorkbenchWeaponSlot::ClearWeapon()
 {
-	UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] ClearWeapon — clearing CurrentWeapon=%s"),
-		CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
+	//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] ClearWeapon — clearing CurrentWeapon=%s"),
+		//CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
 
 	// Ensure weapon is returned to player's inventory before unbinding
 	if (CurrentWeapon && CurrentWeapon->ItemData)
@@ -193,16 +198,16 @@ void UUI_WorkbenchWeaponSlot::ClearWeapon()
 					{
 						if (PlayerInv->AttachItemInstance(CurrentWeapon))
 						{
-							UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon returned to player inventory via AttachItemInstance"));
+							//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon returned to player inventory via AttachItemInstance"));
 						}
 						else
 						{
-							UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Failed to return weapon to inventory (no space?)"));
+							//UE_LOG(LogWorkbenchSlot, Warning, TEXT("[WorkbenchSlot] Failed to return weapon to inventory (no space?)"));
 						}
 					}
 					else
 					{
-						UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon already in player inventory, no action needed"));
+						//UE_LOG(LogWorkbenchSlot, Log, TEXT("[WorkbenchSlot] Weapon already in player inventory, no action needed"));
 					}
 				}
 			}
@@ -217,7 +222,7 @@ void UUI_WorkbenchWeaponSlot::ClearWeapon()
 
 void UUI_WorkbenchWeaponSlot::RefreshSlotVisual()
 {
-	UE_LOG(LogWorkbenchSlot, Verbose, TEXT("[WorkbenchSlot] RefreshSlotVisual — CurrentWeapon=%s"),
-		CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
+	//UE_LOG(LogWorkbenchSlot, Verbose, TEXT("[WorkbenchSlot] RefreshSlotVisual — CurrentWeapon=%s"),
+		//CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("null"));
 	RefreshWithWeapon(CurrentWeapon);
 }

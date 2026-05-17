@@ -16,9 +16,13 @@
 #include "UI/UI_AmmoHUD.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Enemy/EnemyCharacter.h"
 #include "UI/UI_AimPoint.h"
 #include "UI/UI_CharacterProperty.h"
+#include "UI/UI_DamageNumber.h"
 #include "UI/UI_ContainerBackpack.h"
+#include "UI/UI_Minimap.h"
+#include "MinimapCaptureActor.h"
 #include "UI/UI_LootProgressBar.h"
 #include "Inventory/FInventoryItemInstance.h"
 #include "Inventory/InventoryItemDataAsset.h"
@@ -78,6 +82,7 @@ void AAlex_PlayerController::BeginPlay()
 	EnsureAimPointWidgetCreated();
 	EnsureAmmoHudWidgetCreated();
 	EnsureCharacterPropertyWidgetCreated();
+	EnsureMinimapWidgetCreated();
 }
 
 void AAlex_PlayerController::OnPossess(APawn* InPawn)
@@ -87,6 +92,7 @@ void AAlex_PlayerController::OnPossess(APawn* InPawn)
 	EnsureAimPointWidgetCreated();
 	EnsureAmmoHudWidgetCreated();
 	EnsureCharacterPropertyWidgetCreated();
+	EnsureMinimapWidgetCreated();
 }
 
 void AAlex_PlayerController::OnUnPossess()
@@ -128,6 +134,10 @@ void AAlex_PlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ReloadPressed);
 		if (DodgeAction)
 			EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Started, this, &AAlex_PlayerController::Dodge);
+		if (MinimapAction)
+			EnhancedInputComponent->BindAction(MinimapAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ToggleMinimap);
+		if (DebugUIAction)
+			EnhancedInputComponent->BindAction(DebugUIAction, ETriggerEvent::Started, this, &AAlex_PlayerController::ToggleDebugUI);
 	}
 	}
 
@@ -135,7 +145,58 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	DrawDebugAccumulatedHitCount();
+	// Minimap: hide when any UI is open
+	if (MinimapWidget)
+	{
+		ESlateVisibility MapVis = bShowMouseCursor ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible;
+		if (MinimapWidget->GetVisibility() != MapVis)
+			MinimapWidget->SetVisibility(MapVis);
+	}
+
+	// Minimap: player arrow at full rate, enemy scan at 10 Hz
+	MinimapRefreshThrottle += DeltaSeconds;
+	if (bShowMouseCursor) { /* skip when UI open */ }
+	else if (UUI_Minimap* MM = Cast<UUI_Minimap>(MinimapWidget.Get()))
+	{
+		if (APawn* PlayerPawn = GetPawn())
+		{
+			MM->SetPlayerYaw(PlayerPawn->GetActorRotation().Yaw);
+
+			if (MinimapRefreshThrottle >= 0.1f)
+			{
+				MinimapRefreshThrottle = 0.f;
+
+				const FVector PlayerLoc = PlayerPawn->GetActorLocation();
+				const float Scale = MM->WorldToPixelScale;
+				const float HalfRange = MM->MapRadius / Scale;
+
+				TArray<FVector2D> Offsets;
+				TArray<float> Yaws;
+
+				TArray<AActor*> Enemies;
+				UGameplayStatics::GetAllActorsOfClass(GetWorld(), AEnemyCharacter::StaticClass(), Enemies);
+				for (AActor* Enemy : Enemies)
+				{
+					if (!Enemy || Enemy->IsActorBeingDestroyed()) continue;
+					const FVector Rel = Enemy->GetActorLocation() - PlayerLoc;
+
+					if (FMath::Abs(Rel.X) > HalfRange || FMath::Abs(Rel.Y) > HalfRange) continue;
+
+					FCollisionQueryParams CeilingQuery;
+					CeilingQuery.AddIgnoredActor(Enemy);
+					FHitResult CeilingHit;
+					const FVector TraceStart = Enemy->GetActorLocation() + FVector(0, 0, 50.f);
+					const FVector TraceEnd = TraceStart + FVector(0, 0, 800.f);
+					if (GetWorld()->LineTraceSingleByChannel(CeilingHit, TraceStart, TraceEnd, ECC_Visibility, CeilingQuery))
+						continue;
+
+					Offsets.Add(FVector2D(Rel.Y * Scale, -Rel.X * Scale));
+					Yaws.Add(Enemy->GetActorRotation().Yaw);
+				}
+				MM->UpdateEnemyMarkers(Offsets, Yaws);
+			}
+		}
+	}
 
 	// Throttle UI refresh to ~10 Hz
 	UIUpdateThrottle += DeltaSeconds;
@@ -152,6 +213,7 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 
 		if (UUI_CharacterProperty* CharProp = Cast<UUI_CharacterProperty>(CharacterPropertyWidget.Get()))
 			CharProp->RefreshStatusDisplay();
+
 	}
 
 	// --- Loot progress (hold-to-interact) ---
@@ -213,6 +275,30 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 			return;
 		CloseLootContainerUI(true);
 	}
+
+	// --- Furniture walk-away ---
+	if (bStorageCabinetActive || bTrainingMachineActive || bWeaponWorkbenchActive)
+	{
+		if (!PlayerInteractComponent)
+		{
+			if (APawn* ControlledPawn = GetPawn())
+				PlayerInteractComponent = ControlledPawn->FindComponentByClass<UPlayerInteractComponent>();
+		}
+		if (!PlayerInteractComponent)
+		{
+			CloseAllFurnitureUI();
+		}
+		else
+		{
+			AActor* FurnitureTarget = PlayerInteractComponent->GetCurrentInteractable();
+			if (bStorageCabinetActive && Cast<AStorageCabinetActor>(FurnitureTarget) != ActiveStorageCabinet.Get())
+				CloseStorageCabinetUI(true);
+			if (bTrainingMachineActive && Cast<ATrainingMachineActor>(FurnitureTarget) != ActiveTrainingMachine.Get())
+				CloseTrainingMachineUI(true);
+			if (bWeaponWorkbenchActive && Cast<AWeaponWorkbenchActor>(FurnitureTarget) != ActiveWeaponWorkbench.Get())
+				CloseWeaponWorkbenchUI(true);
+		}
+	}
 }
 
 void AAlex_PlayerController::Move(const FInputActionValue& Value)
@@ -246,7 +332,7 @@ void AAlex_PlayerController::Look(const FInputActionValue& Value)
 
 void AAlex_PlayerController::Jump()
 {
-	if (bIsLootProgressActive) return;
+	if (bIsLootProgressActive || bShowMouseCursor) return;
 
 	if (bLootInteractionActive)
 	{
@@ -281,7 +367,7 @@ void AAlex_PlayerController::StopRun()
 
 void AAlex_PlayerController::AimStarted(const FInputActionValue& Value)
 {
-	if (bIsLootProgressActive) return;
+	if (bIsLootProgressActive || bShowMouseCursor) return;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 		PlayerCharacter->SetAiming(true);
 }
@@ -294,7 +380,7 @@ void AAlex_PlayerController::AimStopped(const FInputActionValue& Value)
 
 void AAlex_PlayerController::AttackPressed(const FInputActionValue& Value)
 {
-	if (bIsLootProgressActive) return;
+	if (bIsLootProgressActive || bShowMouseCursor) return;
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
 	{
 		PlayerCharacter->SetPrimaryFireHeld(true);
@@ -310,7 +396,7 @@ void AAlex_PlayerController::AttackReleased(const FInputActionValue& Value)
 
 void AAlex_PlayerController::ReloadPressed(const FInputActionValue& Value)
 {
-	if (bIsLootProgressActive) return;
+	if (bIsLootProgressActive || bShowMouseCursor) return;
 	// OnRKeyPressed handles R when UI is open
 	if (bShowMouseCursor) return;
 
@@ -320,7 +406,7 @@ void AAlex_PlayerController::ReloadPressed(const FInputActionValue& Value)
 
 void AAlex_PlayerController::Dodge()
 {
-	if (bIsLootProgressActive) return;
+	if (bIsLootProgressActive || bShowMouseCursor) return;
 	if (bShowMouseCursor) return;
 
 	if (AAlex_PlayerCharacter* PlayerCharacter = Cast<AAlex_PlayerCharacter>(GetPawn()))
@@ -339,25 +425,23 @@ void AAlex_PlayerController::SetLastRangedHitDamageForDebug(const float Amount)
 	LastRangedHitDamage = Amount;
 }
 
+void AAlex_PlayerController::ShowDamageNumberAtLocation(FVector WorldLocation, float Damage, bool bHeadshot)
+{
+	if (!DamageNumberWidgetClass) return;
+
+	FVector2D ScreenPosition;
+	if (!ProjectWorldLocationToScreen(WorldLocation, ScreenPosition, true)) return;
+
+	UUI_DamageNumber* DamageWidget = CreateWidget<UUI_DamageNumber>(this, DamageNumberWidgetClass);
+	if (!DamageWidget) return;
+
+	DamageWidget->SetDamage(Damage, bHeadshot);
+	DamageWidget->AddToViewport();
+	DamageWidget->SetPositionInViewport(ScreenPosition, true);
+}
+
 void AAlex_PlayerController::DrawDebugAccumulatedHitCount() const
 {
-	if (!GEngine || !IsLocalPlayerController()) return;
-	static constexpr int32 HitCounterOnScreenKey = 871042;
-	static constexpr int32 LastDamageOnScreenKey = 871043;
-
-	if (bShowAccumulatedHitCounterOnScreen)
-	{
-		const FString Line = FString::Printf(TEXT("Hits: %d"), AccumulatedHitCount);
-		GEngine->AddOnScreenDebugMessage(HitCounterOnScreenKey, 0.f, FColor(220, 255, 180), Line, false, FVector2D(HitCounterOnScreenTextScale, HitCounterOnScreenTextScale));
-	}
-	else GEngine->RemoveOnScreenDebugMessage(HitCounterOnScreenKey);
-
-	if (bShowLastRangedHitDamageOnScreen)
-	{
-		const FString DamageLine = FString::Printf(TEXT("Last damage: %.1f"), LastRangedHitDamage);
-		GEngine->AddOnScreenDebugMessage(LastDamageOnScreenKey, 0.f, FColor(180, 220, 255), DamageLine, false, FVector2D(LastHitDamageOnScreenTextScale, LastHitDamageOnScreenTextScale));
-	}
-	else GEngine->RemoveOnScreenDebugMessage(LastDamageOnScreenKey);
 }
 
 void AAlex_PlayerController::InteractStarted()
@@ -374,6 +458,23 @@ void AAlex_PlayerController::InteractStarted()
 	// When UI is open, Interact key opens/closes container backpacks
 	if (bShowMouseCursor)
 	{
+		// Toggle furniture close on second interact
+		if (bStorageCabinetActive)
+		{
+			CloseStorageCabinetUI(true);
+			return;
+		}
+		if (bWeaponWorkbenchActive)
+		{
+			CloseWeaponWorkbenchUI(true);
+			return;
+		}
+		if (bTrainingMachineActive)
+		{
+			CloseTrainingMachineUI(true);
+			return;
+		}
+
 		// Close container if open
 		if (bContainerBackpackActive)
 		{
@@ -557,8 +658,11 @@ void AAlex_PlayerController::TransferAllItemsFromContainer()
 
 	for (UInventoryItemInstance* Item : ItemsToTransfer)
 	{
-		if (InventoryComponent->AddExistingItemInstance(Item))
-			ContainerInv->DetachItemInstance(Item);
+		ContainerInv->DetachItemInstance(Item);
+		if (!InventoryComponent->AddExistingItemInstance(Item))
+		{
+			ContainerInv->AttachItemInstance(Item);
+		}
 	}
 
 	if (UUI_LootContainer* LootUI = Cast<UUI_LootContainer>(LootContainerWidget))
@@ -805,6 +909,53 @@ void AAlex_PlayerController::EnsureCharacterPropertyWidgetCreated()
 	CharacterPropertyWidget = CreateWidget<UUserWidget>(this, CharacterPropertyWidgetClass);
 	if (!CharacterPropertyWidget) return;
 	if (!CharacterPropertyWidget->IsInViewport()) CharacterPropertyWidget->AddToViewport(3);
+}
+
+void AAlex_PlayerController::EnsureMinimapWidgetCreated()
+{
+	if (!MinimapWidgetClass || MinimapWidget) return;
+	MinimapWidget = CreateWidget<UUserWidget>(this, MinimapWidgetClass);
+	if (!MinimapWidget) return;
+	if (!MinimapWidget->IsInViewport()) MinimapWidget->AddToViewport(1);
+	MinimapWidget->SetVisibility(ESlateVisibility::Visible);
+
+	// Spawn capture actor immediately (minimap is always visible)
+	if (MinimapCaptureActorClass && GetWorld())
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (AMinimapCaptureActor* Cap = GetWorld()->SpawnActor<AMinimapCaptureActor>(MinimapCaptureActorClass, SpawnParams))
+		{
+			if (UUI_Minimap* MM = Cast<UUI_Minimap>(MinimapWidget))
+				MM->SetRenderTarget(Cap->GetMinimapRenderTarget());
+		}
+	}
+}
+
+void AAlex_PlayerController::ToggleDebugUI()
+{
+	bDebugUIVisible = !bDebugUIVisible;
+	// Refresh all open inventory/loot UIs to update debug button visibility
+	if (UUI_Inventory* Inv = Cast<UUI_Inventory>(InventoryWidget))
+		Inv->UpdateDebugButtonVisibility();
+	if (UUI_LootContainer* Loot = Cast<UUI_LootContainer>(LootContainerWidget))
+		Loot->UpdateDebugButtonVisibility();
+	if (UUI_ContainerBackpack* CB = Cast<UUI_ContainerBackpack>(ContainerBackpackWidget))
+		CB->UpdateDebugButtonVisibility();
+	if (StorageCabinetWidget)
+		if (UUI_Inventory* SC = Cast<UUI_Inventory>(StorageCabinetWidget))
+			SC->UpdateDebugButtonVisibility();
+}
+
+void AAlex_PlayerController::ToggleMinimap()
+{
+	if (!MinimapWidget) return;
+
+	if (UUI_Minimap* MM = Cast<UUI_Minimap>(MinimapWidget))
+	{
+		bMinimapVisible = !bMinimapVisible;
+		MM->SetLargeMode(bMinimapVisible);
+	}
 }
 
 void AAlex_PlayerController::AttachToPawnInventoryAndEquipment(APawn* InPawn)

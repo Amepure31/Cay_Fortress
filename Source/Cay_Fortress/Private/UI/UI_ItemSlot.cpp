@@ -91,6 +91,12 @@ FReply UUI_ItemSlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, const 
 	Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	OnSlotClicked.Broadcast(this);
 
+	if (BoundItem && InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		OnSlotRightClicked.Broadcast(this, InMouseEvent.GetScreenSpacePosition());
+		return FReply::Handled();
+	}
+
 	if (BoundItem && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		const int32 CellX = GridX - BoundItem->SlotX;

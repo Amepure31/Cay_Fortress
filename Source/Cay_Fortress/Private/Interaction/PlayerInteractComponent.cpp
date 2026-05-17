@@ -3,6 +3,8 @@
 
 #include "Interaction/PlayerInteractComponent.h"
 #include "Interaction/InteractableInterface.h"
+#include "Components/WidgetComponent.h"
+#include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
@@ -13,20 +15,31 @@ UPlayerInteractComponent::UPlayerInteractComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	InteractDistance = 250.0f;
 	TraceRadius = 20.0f;
-	bDebugInteraction = true;
+	bDebugInteraction = false;
 }
-
 
 void UPlayerInteractComponent::BeginPlay()
 {
 	Super::BeginPlay();
-}
 
+	if (InteractPromptWidgetClass && GetOwner())
+	{
+		InteractPromptComp = NewObject<UWidgetComponent>(GetOwner());
+		InteractPromptComp->SetWidgetClass(InteractPromptWidgetClass);
+		InteractPromptComp->SetWidgetSpace(EWidgetSpace::Screen);
+		InteractPromptComp->SetDrawSize(FVector2D(48, 48));
+		InteractPromptComp->SetHiddenInGame(true);
+		InteractPromptComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		InteractPromptComp->SetupAttachment(GetOwner()->GetRootComponent());
+		InteractPromptComp->RegisterComponent();
+	}
+}
 
 void UPlayerInteractComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	UpdateInteractableTarget();
+	UpdateInteractPrompt();
 }
 
 bool UPlayerInteractComponent::TryInteract()
@@ -135,5 +148,24 @@ AActor* UPlayerInteractComponent::FindBestInteractable() const
 
 void UPlayerInteractComponent::ShowDebugMessage(const FString& Message, FColor Color, float Duration) const
 {
-	// Screen debug prompts are intentionally disabled.
+	if (bDebugInteraction && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, Duration, Color, Message);
+	}
+}
+
+void UPlayerInteractComponent::UpdateInteractPrompt()
+{
+	if (!InteractPromptComp) return;
+
+	AActor* Target = CurrentInteractable.Get();
+	if (Target && Target->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()) && IInteractableInterface::Execute_CanInteract(Target, GetOwner()))
+	{
+		InteractPromptComp->SetWorldLocation(Target->GetActorLocation() + InteractPromptOffset);
+		InteractPromptComp->SetHiddenInGame(false);
+	}
+	else
+	{
+		InteractPromptComp->SetHiddenInGame(true);
+	}
 }

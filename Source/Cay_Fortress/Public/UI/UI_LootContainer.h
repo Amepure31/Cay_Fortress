@@ -31,6 +31,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LootContainer")
 	UInventoryComponent* GetContainerInventory() const { return ContainerInventory; }
 
+	virtual void UpdateDebugButtonVisibility() override;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;

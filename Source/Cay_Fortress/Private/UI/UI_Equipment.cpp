@@ -169,8 +169,8 @@ void UUI_Equipment::CreateSlots()
 				}
 				if (SeenTypes.Contains(SlotWidget->SlotType))
 				{
-					UE_LOG(LogTemp, Warning, TEXT("UUI_Equipment: duplicate SlotType %d in hierarchy ignored."),
-						static_cast<int32>(SlotWidget->SlotType));
+					//UE_LOG(LogTemp, Warning, TEXT("UUI_Equipment: duplicate SlotType %d in hierarchy ignored."),
+						//static_cast<int32>(SlotWidget->SlotType));
 					continue;
 				}
 				SeenTypes.Add(SlotWidget->SlotType);
@@ -184,8 +184,8 @@ void UUI_Equipment::CreateSlots()
 
 		if (BoundCount == 0)
 		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("UUI_Equipment: bind EquipmentSlot_Head / _Chest / _Backpack / _Weapon1 / _Weapon2, or place UUI_EquipmentSlot under root with SlotType set."));
+			//UE_LOG(LogTemp, Warning,
+				//TEXT("UUI_Equipment: bind EquipmentSlot_Head / _Chest / _Backpack / _Weapon1 / _Weapon2, or place UUI_EquipmentSlot under root with SlotType set."));
 		}
 	}
 }

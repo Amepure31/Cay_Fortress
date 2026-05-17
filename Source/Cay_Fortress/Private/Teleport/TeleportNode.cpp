@@ -69,8 +69,8 @@ void ATeleportNode::Interact_Implementation(AActor* Interactor)
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[TeleportNode] 传送: TargetLevel=%s, TargetNode=%s"),
-		*TargetLevelName.ToString(), *TargetTeleportNodeID.ToString());
+	//UE_LOG(LogTemp, Log, TEXT("[TeleportNode] 传送: TargetLevel=%s, TargetNode=%s"),
+		//*TargetLevelName.ToString(), *TargetTeleportNodeID.ToString());
 
 	const FString MapPath = FString::Printf(TEXT("/Game/Map/%s"), *TargetLevelName.ToString());
 	UGameplayStatics::OpenLevel(World, FName(*MapPath));

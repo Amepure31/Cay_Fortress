@@ -36,6 +36,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Settings")
 	TSubclassOf<UUI_ItemWidget> ItemWidgetClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Settings")
+	TSubclassOf<UUserWidget> ContextMenuClass;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI")
 	UUniformGridPanel* GridPanel;
 
@@ -135,6 +138,20 @@ public:
 	UFUNCTION()
 	void OnAddItemSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void RequestEquipItem(UInventoryItemInstance* Item);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void RequestConsumeFood(UInventoryItemInstance* Item);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void RequestConsumeMedical(UInventoryItemInstance* Item);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void RequestDiscardItem(UInventoryItemInstance* Item);
+
+	virtual void UpdateDebugButtonVisibility();
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -189,6 +206,9 @@ protected:
 	/** AddDynamic 要求 UFUNCTION；勿删。 */
 	UFUNCTION()
 	void OnItemSlotClickedInternal(UUI_ItemSlot* ClickedSlot);
+
+	UFUNCTION()
+	void OnItemSlotRightClickedInternal(UUI_ItemSlot* ClickedSlot, FVector2D ScreenPosition);
 
 	UFUNCTION()
 	void ShowTooltip(UUI_ItemSlot* HoveredSlot);

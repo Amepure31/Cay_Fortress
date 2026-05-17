@@ -6,11 +6,12 @@
 UENUM(BlueprintType)
 enum class ETrainingStatType : uint8
 {
-	MaxHealth      UMETA(DisplayName = "最大生命值"),
-	MaxStamina     UMETA(DisplayName = "最大体力"),
-	MaxHunger      UMETA(DisplayName = "最大饱食度"),
-	MaxHydration   UMETA(DisplayName = "最大水分"),
-	MaxCarryWeight UMETA(DisplayName = "最大负重"),
+	MaxHealth           UMETA(DisplayName = "最大生命值"),
+	MaxStamina          UMETA(DisplayName = "最大体力"),
+	StaminaRecovery     UMETA(DisplayName = "体力恢复速度"),
+	MaxHunger           UMETA(DisplayName = "最大饱食度"),
+	MaxHydration        UMETA(DisplayName = "最大水分"),
+	MaxCarryWeight      UMETA(DisplayName = "最大负重"),
 };
 
 USTRUCT(BlueprintType)

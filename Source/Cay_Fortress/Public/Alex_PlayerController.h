@@ -40,6 +40,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|UI")
 	float GetLastRangedHitDamageForDebug() const { return LastRangedHitDamage; }
 
+	/** 在指定世界位置弹出伤害跳字。bHeadshot=true 时文字变红。 */
+	UFUNCTION(BlueprintCallable, Category = "Combat|UI")
+	void ShowDamageNumberAtLocation(FVector WorldLocation, float Damage, bool bHeadshot);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
@@ -85,6 +89,17 @@ public:
 
 	/** 刷新玩家背包 UI（外部调用，如家具消耗物品后） */
 	void RefreshPlayerInventoryUI();
+
+	void EnsureMinimapWidgetCreated();
+	void ToggleMinimap();
+
+	void ToggleDebugUI();
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Debug")
+	bool IsDebugUIVisible() const { return bDebugUIVisible; }
+
+private:
 
 private:
 	void CloseAllFurnitureUI();
@@ -150,6 +165,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* InventoryAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Minimap", meta = (AllowPrivateAccess = "true"))
+	class UInputAction* MinimapAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Debug", meta = (AllowPrivateAccess = "true"))
+	class UInputAction* DebugUIAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Inventory, meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> InventoryWidgetClass;
 
@@ -184,6 +205,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> WeaponWorkbenchWidgetClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Furniture", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> DamageNumberWidgetClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Minimap", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> MinimapWidgetClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Minimap", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<class AMinimapCaptureActor> MinimapCaptureActorClass;
+
 	UPROPERTY()
 	UUserWidget* InventoryWidget;
 
@@ -212,6 +242,9 @@ protected:
 	TObjectPtr<UUserWidget> CharacterPropertyWidget;
 
 	UPROPERTY()
+	TObjectPtr<UUserWidget> MinimapWidget;
+
+	UPROPERTY()
 	UUserWidget* ContainerBackpackWidget;
 
 	UPROPERTY(Transient)
@@ -219,6 +252,11 @@ protected:
 
 	bool bContainerBackpackActive;
 	bool bInventoryOpenedByContainerBackpack;
+
+	bool bMinimapVisible;
+	bool bDebugUIVisible = false;
+
+	float MinimapRefreshThrottle = 0.f;
 
 	UPROPERTY(Transient)
 	int32 AccumulatedHitCount = 0;

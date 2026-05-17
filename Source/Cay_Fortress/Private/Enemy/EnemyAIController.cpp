@@ -18,6 +18,7 @@
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISenseConfig_Hearing.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -86,6 +87,17 @@ AEnemyAIController::AEnemyAIController(const FObjectInitializer& ObjectInitializ
 		AIPerception->ConfigureSense(*DefaultSightConfig);
 		AIPerception->SetDominantSense(UAISense_Sight::StaticClass());
 		AIPerception->OnTargetPerceptionUpdated.AddDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
+
+		// Hearing sense for nearby combat / footsteps
+		UAISenseConfig_Hearing* HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
+		if (HearingConfig)
+		{
+			HearingConfig->HearingRange = 500.f;
+			HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
+			HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
+			HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
+			AIPerception->ConfigureSense(*HearingConfig);
+		}
 	}
 
 	static ConstructorHelpers::FObjectFinder<UBehaviorTree> BTObject(TEXT("/Game/Enemy/Logic/BT_Enemy.BT_Enemy"));
@@ -520,7 +532,7 @@ void AEnemyAIController::SeedRoamBlackboardTarget()
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("EnemyAI: BlackboardComponent still null after %d deferred ticks. Check BT Blackboard."), RoamSeedAttemptCounter);
+				//UE_LOG(LogTemp, Error, TEXT("EnemyAI: BlackboardComponent still null after %d deferred ticks. Check BT Blackboard."), RoamSeedAttemptCounter);
 			}
 		}
 		return;
@@ -532,8 +544,8 @@ void AEnemyAIController::SeedRoamBlackboardTarget()
 	const FBlackboard::FKey RoamKey = BB->GetKeyID(RoamKeyName);
 	if (RoamKey == FBlackboard::InvalidKey)
 	{
-		UE_LOG(LogTemp, Error, TEXT("EnemyAI: Blackboard has no Vector key '%s'. Add it to BB_Enemy and point BT_Enemy at that blackboard."),
-			*RoamKeyName.ToString());
+		//UE_LOG(LogTemp, Error, TEXT("EnemyAI: Blackboard has no Vector key '%s'. Add it to BB_Enemy and point BT_Enemy at that blackboard."),
+			//*RoamKeyName.ToString());
 		return;
 	}
 
@@ -593,7 +605,7 @@ void AEnemyAIController::SeedRoamBlackboardTarget()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnemyAI: No NavigationSystem — RoamTargetLocation may be off-mesh."));
+		//UE_LOG(LogTemp, Warning, TEXT("EnemyAI: No NavigationSystem — RoamTargetLocation may be off-mesh."));
 	}
 
 	BB->SetValueAsVector(EnemyBlackboardKeys::KeyRoamTargetLocation(), TargetLocation);
@@ -702,6 +714,23 @@ void AEnemyAIController::SetChaseMoveSuppressedForScream(const bool bSuppress)
 	{
 		DriveChaseMove();
 	}
+}
+
+void AEnemyAIController::ForceDetectPlayer(AActor* PlayerActor)
+{
+	if (!PlayerActor || CurrentState == EEnemyBehavior::Attack)
+		return;
+
+	FocusTarget = PlayerActor;
+	bPlayerCurrentlyPerceived = true;
+	bHasLastKnownPlayerLocation = true;
+	LastKnownPlayerLocation = PlayerActor->GetActorLocation();
+	SetFocus(PlayerActor);
+
+	if (CurrentState == EEnemyBehavior::Roam)
+		SetBehaviorState(EEnemyBehavior::Alert);
+	else
+		SyncStateToBlackboard();
 }
 
 void AEnemyAIController::NotifyDamagedBy(AActor* const DamageCauser)

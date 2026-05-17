@@ -106,7 +106,7 @@ void UUI_ItemTooltip::SetItem(UInventoryItemInstance* InItemInstance)
 			}
 		}
 
-		SetVisibility(ESlateVisibility::Visible);
+		SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
 	else
 	{

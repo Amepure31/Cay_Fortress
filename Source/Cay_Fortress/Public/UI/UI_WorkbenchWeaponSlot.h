@@ -14,7 +14,7 @@ class CAY_FORTRESS_API UUI_WorkbenchWeaponSlot : public UUI_EquipmentSlot
 
 public:
 	/** Bind to parent workbench widget */
-	void SetParentWorkbench(UUI_WeaponWorkbench* InWorkbench) { ParentWorkbench = InWorkbench; }
+	void SetParentWorkbench(UUI_WeaponWorkbench* InWorkbench);
 
 	/** Display a weapon directly, bypassing equipment component */
 	UFUNCTION(BlueprintCallable, Category = "WorkbenchSlot")

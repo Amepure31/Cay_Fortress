@@ -39,6 +39,9 @@ enum class EContainerType : uint8
 	/** 装备箱 */
 	EquipmentCrate = 8 UMETA(DisplayName = "装备箱"),
 
+	/** 工具箱 */
+	ToolKit = 9 UMETA(DisplayName = "工具箱"),
+
 	/** 枚举上限（隐藏） */
-	MAX = 9 UMETA(Hidden)
+	MAX = 10 UMETA(Hidden)
 };

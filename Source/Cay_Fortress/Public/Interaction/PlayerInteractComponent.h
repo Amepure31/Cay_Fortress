@@ -7,19 +7,20 @@
 #include "PlayerInteractComponent.generated.h"
 
 class AActor;
+class UWidgetComponent;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class CAY_FORTRESS_API UPlayerInteractComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:	
+public:
 	UPlayerInteractComponent();
 
 protected:
 	virtual void BeginPlay() override;
 
-public:	
+public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	/** 尝试与当前目标交互 */
@@ -35,7 +36,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (ClampMin = "50.0", UIMin = "50.0"))
 	float InteractDistance;
 
-	/** 胶囊半径（球体检测） */
+	/** 球体检测半径 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float TraceRadius;
 
@@ -43,11 +44,23 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Debug")
 	bool bDebugInteraction;
 
+	/** 交互提示控件类 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt")
+	TSubclassOf<UUserWidget> InteractPromptWidgetClass;
+
+	/** 提示相对目标的位置偏移 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt")
+	FVector InteractPromptOffset = FVector(0, 0, 120.0f);
+
 private:
 	void UpdateInteractableTarget();
 	AActor* FindBestInteractable() const;
 	void ShowDebugMessage(const FString& Message, FColor Color = FColor::Yellow, float Duration = 1.5f) const;
+	void UpdateInteractPrompt();
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> CurrentInteractable;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> InteractPromptComp;
 };

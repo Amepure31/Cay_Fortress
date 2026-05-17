@@ -8,6 +8,7 @@
 #include "Components/TextBlock.h"
 #include "LootContainer/LootContainerActor.h"
 #include "LootContainer/ContainerType.h"
+#include "Alex_PlayerController.h"
 
 void UUI_LootContainer::NativeConstruct()
 {
@@ -25,6 +26,7 @@ void UUI_LootContainer::NativeConstruct()
 	}
 
 	UpdateContainerTypeText();
+	UpdateDebugButtonVisibility();
 }
 
 void UUI_LootContainer::NativeDestruct()
@@ -48,6 +50,21 @@ void UUI_LootContainer::BindContainerInventory(UInventoryComponent* InContainerI
 {
 	ContainerInventory = InContainerInventory;
 	BindInventory(InContainerInventory);
+}
+
+void UUI_LootContainer::UpdateDebugButtonVisibility()
+{
+	Super::UpdateDebugButtonVisibility();
+
+	bool bDebug = false;
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (AAlex_PlayerController* APC = Cast<AAlex_PlayerController>(PC))
+			bDebug = APC->IsDebugUIVisible();
+	}
+	ESlateVisibility Vis = bDebug ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	if (RefreshButton)
+		RefreshButton->SetVisibility(Vis);
 }
 
 void UUI_LootContainer::OnRefreshButtonClicked()

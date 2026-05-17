@@ -146,6 +146,9 @@ public:
 	/** 受击（非致命）：硬直后追向玩家。DamageCauser 用于尝试锁定 Alex。 */
 	void NotifyDamagedBy(AActor* DamageCauser);
 
+	/** 强制立即感知玩家（附近敌人被攻击/听到跑动时调用）。 */
+	void ForceDetectPlayer(AActor* PlayerActor);
+
 	/** 死亡时停行为树与移动（蒙太奇由 AEnemyCharacter 播放）。 */
 	void NotifyDeathBegin();
 

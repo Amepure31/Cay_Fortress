@@ -95,6 +95,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Widget")
 	TObjectPtr<UTextBlock> CostText;
 
+	// Status text — prompts, level info, max-level
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Widget")
+	TObjectPtr<UTextBlock> StatusText;
+
 	// Cabinet upgrade cost display (up to 3 items)
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Widget")
 	TObjectPtr<UImage> CabinetCostImage1;
@@ -124,5 +128,6 @@ private:
 	void UpdateCostDisplay();
 	void UpdateCabinetCostDisplay();
 	void UpdateButtonColors();
+	void UpdateStatusText();
 	void SetCostSlotWidget(int32 Index, UImage* ImageWidget, UTextBlock* TextWidget, const FSoftObjectPath& ItemPath, int32 Amount);
 };
