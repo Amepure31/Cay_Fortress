@@ -49,12 +49,12 @@ void UUI_Minimap::SetAreaName(FText Name)
 	}
 }
 
-void UUI_Minimap::SetPlayerYaw(float Yaw)
+void UUI_Minimap::SetPlayerYaw(float Yaw, FVector2D PixelOffset)
 {
 	if (PlayerIndicator)
 	{
-		// Arrow texture points right (East), minimap forward is up: rotate -90 degrees
 		PlayerIndicator->SetRenderTransformAngle(Yaw - 90.f);
+		PlayerIndicator->SetRenderTranslation(PixelOffset);
 	}
 }
 

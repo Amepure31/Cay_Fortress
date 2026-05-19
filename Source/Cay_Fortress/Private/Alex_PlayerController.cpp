@@ -16,7 +16,6 @@
 #include "UI/UI_AmmoHUD.h"
 #include "Equipment/EquipmentComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "Enemy/EnemyCharacter.h"
 #include "UI/UI_AimPoint.h"
 #include "UI/UI_CharacterProperty.h"
 #include "UI/UI_DamageNumber.h"
@@ -153,48 +152,18 @@ void AAlex_PlayerController::Tick(float DeltaSeconds)
 			MinimapWidget->SetVisibility(MapVis);
 	}
 
-	// Minimap: player arrow at full rate, enemy scan at 10 Hz
-	MinimapRefreshThrottle += DeltaSeconds;
+	// Minimap: player arrow at full rate
 	if (bShowMouseCursor) { /* skip when UI open */ }
 	else if (UUI_Minimap* MM = Cast<UUI_Minimap>(MinimapWidget.Get()))
 	{
 		if (APawn* PlayerPawn = GetPawn())
 		{
-			MM->SetPlayerYaw(PlayerPawn->GetActorRotation().Yaw);
+			const FVector CaptureLoc = MinimapCaptureActor.IsValid() ? MinimapCaptureActor->GetActorLocation() : PlayerPawn->GetActorLocation();
+			const float MScale = MM->WorldToPixelScale;
 
-			if (MinimapRefreshThrottle >= 0.1f)
-			{
-				MinimapRefreshThrottle = 0.f;
-
-				const FVector PlayerLoc = PlayerPawn->GetActorLocation();
-				const float Scale = MM->WorldToPixelScale;
-				const float HalfRange = MM->MapRadius / Scale;
-
-				TArray<FVector2D> Offsets;
-				TArray<float> Yaws;
-
-				TArray<AActor*> Enemies;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), AEnemyCharacter::StaticClass(), Enemies);
-				for (AActor* Enemy : Enemies)
-				{
-					if (!Enemy || Enemy->IsActorBeingDestroyed()) continue;
-					const FVector Rel = Enemy->GetActorLocation() - PlayerLoc;
-
-					if (FMath::Abs(Rel.X) > HalfRange || FMath::Abs(Rel.Y) > HalfRange) continue;
-
-					FCollisionQueryParams CeilingQuery;
-					CeilingQuery.AddIgnoredActor(Enemy);
-					FHitResult CeilingHit;
-					const FVector TraceStart = Enemy->GetActorLocation() + FVector(0, 0, 50.f);
-					const FVector TraceEnd = TraceStart + FVector(0, 0, 800.f);
-					if (GetWorld()->LineTraceSingleByChannel(CeilingHit, TraceStart, TraceEnd, ECC_Visibility, CeilingQuery))
-						continue;
-
-					Offsets.Add(FVector2D(Rel.Y * Scale, -Rel.X * Scale));
-					Yaws.Add(Enemy->GetActorRotation().Yaw);
-				}
-				MM->UpdateEnemyMarkers(Offsets, Yaws);
-			}
+			// Player arrow: position relative to capture center + rotation
+			const FVector PlyRel = PlayerPawn->GetActorLocation() - CaptureLoc;
+			MM->SetPlayerYaw(PlayerPawn->GetActorRotation().Yaw, FVector2D(PlyRel.Y * MScale, -PlyRel.X * MScale));
 		}
 	}
 
@@ -926,6 +895,7 @@ void AAlex_PlayerController::EnsureMinimapWidgetCreated()
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		if (AMinimapCaptureActor* Cap = GetWorld()->SpawnActor<AMinimapCaptureActor>(MinimapCaptureActorClass, SpawnParams))
 		{
+			MinimapCaptureActor = Cap;
 			if (UUI_Minimap* MM = Cast<UUI_Minimap>(MinimapWidget))
 				MM->SetRenderTarget(Cap->GetMinimapRenderTarget());
 		}

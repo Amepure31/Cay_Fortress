@@ -14,6 +14,8 @@ ADoorActor::ADoorActor()
 
 	// AI 视野穿透门（不阻挡 Visibility 射线）
 	DoorMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+	// 武器射线不能穿透门
+	DoorMesh->SetCollisionResponseToChannel(CayFortressCollision::WeaponTrace, ECR_Block);
 
 	DoorDetectionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("DoorDetectionSphere"));
 	DoorDetectionSphere->SetupAttachment(DoorMesh);

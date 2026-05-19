@@ -338,8 +338,6 @@ void AEnemyAIController::HandlePathBlocked()
 
 	const FVector SearchCenter = MyLoc + SearchDir * 150.f;
 	const FCollisionShape Sphere = FCollisionShape::MakeSphere(DoorDetectionRadius);
-	const FCollisionObjectQueryParams ObjectParams(CayFortressCollision::DestructibleObstacle);
-
 	UWorld* const World = GetWorld();
 	if (!World)
 	{
@@ -349,12 +347,12 @@ void AEnemyAIController::HandlePathBlocked()
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(SelfPawn);
 
-	// 用极短 Sweep 模拟 Overlap，避免 FOverlapResult 头文件依赖问题
+	// 用极短 Sweep 模拟 Overlap，使用 ECC_WorldStatic 避免 Level Instance 自定义通道失效
 	TArray<FHitResult> SweepHits;
 	const FVector SweepStart = SearchCenter;
 	const FVector SweepEnd = SearchCenter + FVector(1.f, 0.f, 0.f);
 
-	if (!World->SweepMultiByObjectType(SweepHits, SweepStart, SweepEnd, FQuat::Identity, ObjectParams, Sphere, QueryParams))
+	if (!World->SweepMultiByChannel(SweepHits, SweepStart, SweepEnd, FQuat::Identity, ECC_WorldStatic, Sphere, QueryParams))
 	{
 		return;
 	}
@@ -402,14 +400,13 @@ bool AEnemyAIController::TryTargetDoorNearPlayer()
 	}
 
 	const FCollisionShape Sphere = FCollisionShape::MakeSphere(DoorDetectionRadius * 1.5f);
-	const FCollisionObjectQueryParams ObjectParams(CayFortressCollision::DestructibleObstacle);
 	FCollisionQueryParams QueryParams;
 
 	TArray<FHitResult> SweepHits;
 	const FVector Center = LastKnownPlayerLocation;
 	const FVector SweepEnd = Center + FVector(1.f, 0.f, 0.f);
 
-	if (!World->SweepMultiByObjectType(SweepHits, Center, SweepEnd, FQuat::Identity, ObjectParams, Sphere, QueryParams))
+	if (!World->SweepMultiByChannel(SweepHits, Center, SweepEnd, FQuat::Identity, ECC_WorldStatic, Sphere, QueryParams))
 	{
 		return false;
 	}

@@ -48,7 +48,7 @@ protected:
 
 	/** 跟随平滑速度（越大越快），0 = 无延迟瞬间跟随 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap")
-	float FollowSpeed = 10.f;
+	float FollowSpeed = 0.f;
 
 private:
 	TWeakObjectPtr<AActor> FollowTarget;

@@ -244,6 +244,9 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MinimapWidget;
 
+	UPROPERTY(Transient)
+	TWeakObjectPtr<class AMinimapCaptureActor> MinimapCaptureActor;
+
 	UPROPERTY()
 	UUserWidget* ContainerBackpackWidget;
 
@@ -256,7 +259,6 @@ protected:
 	bool bMinimapVisible;
 	bool bDebugUIVisible = false;
 
-	float MinimapRefreshThrottle = 0.f;
 
 	UPROPERTY(Transient)
 	int32 AccumulatedHitCount = 0;

@@ -29,9 +29,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Minimap")
 	void SetAreaName(FText Name);
 
-	/** 更新玩家箭头朝向（Yaw 角度） */
+	/** 更新玩家箭头朝向（Yaw 角度）和偏移（相对地图中心的像素偏移） */
 	UFUNCTION(BlueprintCallable, Category = "Minimap")
-	void SetPlayerYaw(float Yaw);
+	void SetPlayerYaw(float Yaw, FVector2D PixelOffset = FVector2D::ZeroVector);
 
 	/** 更新敌人标记：Offsets = 从小地图中心出发的像素偏移，Yaws = 对应朝向 */
 	UFUNCTION(BlueprintCallable, Category = "Minimap")
